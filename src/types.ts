@@ -1,23 +1,14 @@
-export interface LyricBar {
-  bar: number;
-  text: string;
-}
-
-export interface DrumBlock {
+export interface Marker {
   id: string;
-  startBar: number;
-  lengthBars: number;
-  color: string;
+  time: number;
   label: string;
-  note: string;
+  color: string;
 }
 
-export interface Song {
+export interface Track {
   id: string;
   title: string;
-  bpm: number;
-  beatsPerBar: number;
-  totalBars: number;
-  lyrics: LyricBar[];
-  drumBlocks: DrumBlock[];
+  order: number;
+  duration: number;
+  markers: Marker[];
 }
