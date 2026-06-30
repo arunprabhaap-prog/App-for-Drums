@@ -51,15 +51,24 @@ export function useTracks(): { tracks: Track[]; setTracks: Dispatch<SetStateActi
 
     authReady.then(() => {
       next.forEach((track) => {
-        setDoc(doc(db, TRACKS_COLLECTION, track.id), track).catch((err) =>
-          console.error('Firestore write error:', err.code, err.message),
-        );
+        try {
+          setDoc(doc(db, TRACKS_COLLECTION, track.id), track).catch((err) =>
+            console.error('Firestore write error:', err),
+          );
+        } catch (err) {
+          console.error('Firestore write error:', err);
+        }
       });
       prevIds.forEach((id) => {
-        if (!nextIds.has(id))
-          deleteDoc(doc(db, TRACKS_COLLECTION, id)).catch((err) =>
-            console.error('Firestore delete error:', err.code, err.message),
-          );
+        if (!nextIds.has(id)) {
+          try {
+            deleteDoc(doc(db, TRACKS_COLLECTION, id)).catch((err) =>
+              console.error('Firestore delete error:', err),
+            );
+          } catch (err) {
+            console.error('Firestore delete error:', err);
+          }
+        }
       });
     });
   };
