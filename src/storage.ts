@@ -104,12 +104,13 @@ async function putLocalBlob(id: string, blob: Blob): Promise<void> {
 
 export async function saveBlob(id: string, blob: Blob): Promise<void> {
   await putLocalBlob(id, blob);
-  try {
-    await authReady;
-    await uploadBytes(ref(storage, `audio/${id}`), blob);
-  } catch (err) {
-    console.error('Storage upload error:', err);
-  }
+  uploadBlobInBackground(id, blob);
+}
+
+function uploadBlobInBackground(id: string, blob: Blob): void {
+  authReady
+    .then(() => uploadBytes(ref(storage, `audio/${id}`), blob))
+    .catch((err) => console.error('Storage upload error:', err));
 }
 
 export async function getBlob(id: string, mimeType?: string): Promise<Blob | undefined> {

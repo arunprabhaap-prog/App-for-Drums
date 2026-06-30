@@ -18,13 +18,19 @@ export const storage = getStorage(app);
 const auth = getAuth(app);
 
 export const authReady: Promise<void> = new Promise((resolve) => {
+  const timeout = setTimeout(() => {
+    console.error('Anonymous sign-in timed out after 10s');
+    resolve();
+  }, 10000);
   const unsubscribe = onAuthStateChanged(auth, (user) => {
     if (user) {
+      clearTimeout(timeout);
       unsubscribe();
       resolve();
     } else {
       signInAnonymously(auth).catch((err) => {
         console.error('Anonymous sign-in failed:', err.code, err.message);
+        clearTimeout(timeout);
         resolve();
       });
     }
