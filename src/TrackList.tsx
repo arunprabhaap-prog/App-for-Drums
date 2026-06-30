@@ -37,34 +37,43 @@ export default function TrackList({ tracks, setTracks }: Props) {
   // only ever shows tracks that are guaranteed to play on the first tap -
   // this is what makes a track uploaded on another device show up playable
   // here without the user having to press "Sync tracks" manually.
+  // Tracks download in parallel (not one-at-a-time) so a handful of files
+  // finish in roughly the time of the slowest one instead of the sum of all
+  // of them, and downloadingRef stops the manual "Sync tracks" button from
+  // racing this effect and re-fetching the same blob twice over the network.
+  const downloadingRef = useRef<Set<string>>(new Set());
+
+  async function ensureTrackReady(track: Track, isCancelled: () => boolean) {
+    if (downloadingRef.current.has(track.id)) return;
+    const local = await hasLocalBlob(track.id);
+    if (isCancelled()) return;
+    if (local) {
+      setReadyIds((prev) => (prev.has(track.id) ? prev : new Set(prev).add(track.id)));
+      return;
+    }
+    downloadingRef.current.add(track.id);
+    setDlStatus(track.id, { status: 'syncing' });
+    try {
+      await syncBlob(track.id, track.mimeType);
+      if (isCancelled()) return;
+      setReadyIds((prev) => new Set(prev).add(track.id));
+      setDlStatus(track.id, null);
+    } catch (err) {
+      if (isCancelled()) return;
+      const message = (err as { code?: string; message?: string })?.code || (err as Error)?.message || String(err);
+      setDlStatus(track.id, { status: 'error', message });
+    } finally {
+      downloadingRef.current.delete(track.id);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
-    async function ensureReady() {
-      for (const track of [...tracks].sort((a, b) => a.order - b.order)) {
-        if (cancelled) return;
-        const local = await hasLocalBlob(track.id);
-        if (cancelled) return;
-        if (local) {
-          setReadyIds((prev) => (prev.has(track.id) ? prev : new Set(prev).add(track.id)));
-          continue;
-        }
-        setDlStatus(track.id, { status: 'syncing' });
-        try {
-          await syncBlob(track.id, track.mimeType);
-          if (cancelled) return;
-          setReadyIds((prev) => new Set(prev).add(track.id));
-          setDlStatus(track.id, null);
-        } catch (err) {
-          if (cancelled) return;
-          const message = (err as { code?: string; message?: string })?.code || (err as Error)?.message || String(err);
-          setDlStatus(track.id, { status: 'error', message });
-        }
-      }
-    }
-    ensureReady();
+    Promise.all(tracks.map((track) => ensureTrackReady(track, () => cancelled)));
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tracks]);
 
   const sorted = [...tracks].filter((t) => readyIds.has(t.id)).sort((a, b) => a.order - b.order);
@@ -90,18 +99,27 @@ export default function TrackList({ tracks, setTracks }: Props) {
 
   async function syncAllTracks() {
     setIsSyncingAll(true);
-    for (const track of [...tracks].sort((a, b) => a.order - b.order)) {
-      setDlStatus(track.id, { status: 'syncing' });
-      try {
-        await syncBlob(track.id, track.mimeType);
-        setDlStatus(track.id, null);
-        setReadyIds((prev) => (prev.has(track.id) ? prev : new Set(prev).add(track.id)));
-        setRefreshKeys((prev) => new Map(prev).set(track.id, (prev.get(track.id) ?? 0) + 1));
-      } catch (err) {
-        const message = (err as { code?: string; message?: string })?.code || (err as Error)?.message || String(err);
-        setDlStatus(track.id, { status: 'error', message });
-      }
-    }
+    await Promise.all(
+      tracks.map(async (track) => {
+        // The auto-download effect may already be fetching this track (e.g.
+        // right after the page loads) - don't kick off a second download of
+        // the same blob, just let that one finish.
+        if (downloadingRef.current.has(track.id)) return;
+        downloadingRef.current.add(track.id);
+        setDlStatus(track.id, { status: 'syncing' });
+        try {
+          await syncBlob(track.id, track.mimeType);
+          setDlStatus(track.id, null);
+          setReadyIds((prev) => (prev.has(track.id) ? prev : new Set(prev).add(track.id)));
+          setRefreshKeys((prev) => new Map(prev).set(track.id, (prev.get(track.id) ?? 0) + 1));
+        } catch (err) {
+          const message = (err as { code?: string; message?: string })?.code || (err as Error)?.message || String(err);
+          setDlStatus(track.id, { status: 'error', message });
+        } finally {
+          downloadingRef.current.delete(track.id);
+        }
+      }),
+    );
     setIsSyncingAll(false);
   }
 
