@@ -157,7 +157,11 @@ export async function getBlob(id: string, mimeType?: string): Promise<Blob | und
 
   await authReady;
   const bytes = await getBytes(ref(storage, `audio/${id}`));
-  const blob = new Blob([bytes], { type: mimeType || 'audio/mpeg' });
+  // audio/x-m4a is a non-standard alias that some browsers' media pipelines
+  // refuse to decode for a Blob reconstructed from raw bytes (no filename
+  // hint, unlike a locally-picked File) - normalize to the standard mp4 type.
+  const normalizedType = mimeType === 'audio/x-m4a' ? 'audio/mp4' : mimeType || 'audio/mpeg';
+  const blob = new Blob([bytes], { type: normalizedType });
   await putLocalBlob(id, blob);
   return blob;
 }

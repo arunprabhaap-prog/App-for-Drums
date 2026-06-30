@@ -70,8 +70,12 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
   function togglePlay() {
     const audio = audioRef.current;
     if (!audio || !url) return;
-    if (audio.paused) audio.play().catch(() => {});
-    else audio.pause();
+    if (audio.paused) {
+      audio.play().catch((err) => {
+        console.error('Playback failed:', track.id, err);
+        setLoadError(err?.message || String(err));
+      });
+    } else audio.pause();
   }
 
   useImperativeHandle(ref, () => ({ togglePlay }));
@@ -137,6 +141,11 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
       onEnded={() => {
         setIsPlaying(false);
         onPlayingChange(false);
+      }}
+      onError={(e) => {
+        const mediaError = e.currentTarget.error;
+        console.error('Audio element error:', track.id, mediaError);
+        setLoadError(mediaError?.message || `decode error (code ${mediaError?.code})`);
       }}
     />
   );
