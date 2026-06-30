@@ -9,6 +9,8 @@ interface Props {
   onOpenDrummerView: () => void;
 }
 
+const DELETE_PASSCODE = '2323';
+
 export default function TrackList({ tracks, setTracks, onOpenDrummerView }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -22,6 +24,9 @@ export default function TrackList({ tracks, setTracks, onOpenDrummerView }: Prop
   const [refreshKeys, setRefreshKeys] = useState<Map<string, number>>(new Map());
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [readyIds, setReadyIds] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deletePasscode, setDeletePasscode] = useState('');
+  const [deletePasscodeError, setDeletePasscodeError] = useState(false);
 
   useEffect(() => {
     const hasSyncing = [...syncStatus.values()].some((s) => s.status === 'syncing');
@@ -162,8 +167,20 @@ export default function TrackList({ tracks, setTracks, onOpenDrummerView }: Prop
     );
   }
 
-  async function deleteTrack(id: string) {
-    if (!confirm('Delete this track and all its flags?')) return;
+  function requestDeleteTrack(id: string, title: string) {
+    setDeletePasscode('');
+    setDeletePasscodeError(false);
+    setDeleteTarget({ id, title });
+  }
+
+  async function confirmDeleteTrack() {
+    if (!deleteTarget) return;
+    if (deletePasscode !== DELETE_PASSCODE) {
+      setDeletePasscodeError(true);
+      return;
+    }
+    const { id } = deleteTarget;
+    setDeleteTarget(null);
     await deleteBlob(id);
     setTracks((prev) => prev.filter((t) => t.id !== id));
     setReadyIds((prev) => {
@@ -318,7 +335,11 @@ export default function TrackList({ tracks, setTracks, onOpenDrummerView }: Prop
                 <button onClick={() => startReplaceTrack(track.id)} aria-label="Replace audio">
                   ⟳
                 </button>
-                <button className="danger" onClick={() => deleteTrack(track.id)} aria-label="Delete">
+                <button
+                  className="danger"
+                  onClick={() => requestDeleteTrack(track.id, track.title)}
+                  aria-label="Delete"
+                >
                   ✕
                 </button>
               </div>
@@ -347,6 +368,37 @@ export default function TrackList({ tracks, setTracks, onOpenDrummerView }: Prop
           </li>
         ))}
       </ul>
+
+      {deleteTarget && (
+        <div className="modal-backdrop" onClick={() => setDeleteTarget(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete "{deleteTarget.title}"?</h3>
+            <p className="hint">This removes the track and all its flags. Enter the passcode to confirm.</p>
+            <label className="modal-field">
+              Passcode
+              <input
+                autoFocus
+                type="password"
+                inputMode="numeric"
+                value={deletePasscode}
+                onChange={(e) => {
+                  setDeletePasscode(e.target.value);
+                  setDeletePasscodeError(false);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && confirmDeleteTrack()}
+              />
+            </label>
+            {deletePasscodeError && <p className="load-error">⚠ Incorrect passcode</p>}
+            <div className="modal-actions">
+              <div className="spacer" />
+              <button onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="danger" onClick={confirmDeleteTrack}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
