@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { deleteObject, getBytes, ref, uploadBytesResumable } from 'firebase/storage';
+import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
 import type { Track } from './types';
 import { authReady, db, storage } from './firebase';
 
@@ -102,36 +102,27 @@ async function putLocalBlob(id: string, blob: Blob): Promise<void> {
   idb.close();
 }
 
-const STALL_TIMEOUT_MS = 30000;
+// uploadBytesResumable reads the File/Blob across multiple chunked requests,
+// which trips Chrome's net::ERR_UPLOAD_FILE_CHANGED safety check whenever the
+// OS reports any metadata change between reads (cloud-synced folders like
+// OneDrive/Dropbox touching the file, antivirus scans, etc). uploadBytes
+// reads the file exactly once and avoids this entirely, so we use it with a
+// generous, file-size-scaled timeout instead (assumes a conservative 100kB/s
+// minimum so large files on slow connections aren't killed prematurely).
+function uploadTimeoutFor(blob: Blob): number {
+  return Math.max(30000, (blob.size / (100 * 1024)) * 1000);
+}
 
-// Uploads via the resumable API so we get progress events, and only time out
-// when no progress has been made for STALL_TIMEOUT_MS - a flat total-time
-// timeout was killing legitimate uploads of large files on slow connections.
-function uploadWithStallTimeout(path: string, blob: Blob): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(ref(storage, path), blob);
-    let stallTimer: ReturnType<typeof setTimeout>;
-    const resetStallTimer = () => {
-      clearTimeout(stallTimer);
-      stallTimer = setTimeout(() => {
-        task.cancel();
-        reject(new Error('Upload stalled - no progress for 30s, check your network connection'));
-      }, STALL_TIMEOUT_MS);
-    };
-    resetStallTimer();
-    task.on(
-      'state_changed',
-      () => resetStallTimer(),
-      (err) => {
-        clearTimeout(stallTimer);
-        reject(err);
-      },
-      () => {
-        clearTimeout(stallTimer);
-        resolve();
-      },
-    );
-  });
+function uploadWithTimeout(path: string, blob: Blob): Promise<void> {
+  return Promise.race([
+    uploadBytes(ref(storage, path), blob).then(() => {}),
+    new Promise<void>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('Upload timed out - check your network connection')),
+        uploadTimeoutFor(blob),
+      ),
+    ),
+  ]);
 }
 
 export async function saveBlob(
@@ -145,7 +136,7 @@ export async function saveBlob(
 
 function uploadBlobInBackground(id: string, blob: Blob, onSynced?: (ok: boolean, error?: string) => void): void {
   authReady
-    .then(() => uploadWithStallTimeout(`audio/${id}`, blob))
+    .then(() => uploadWithTimeout(`audio/${id}`, blob))
     .then(() => onSynced?.(true))
     .catch((err) => {
       console.error('Storage upload error:', err);
@@ -187,7 +178,7 @@ export async function resyncLocalBlobs(tracks: Track[]): Promise<void> {
       });
       idb.close();
       if (blob) {
-        await uploadWithStallTimeout(`audio/${track.id}`, blob);
+        await uploadWithTimeout(`audio/${track.id}`, blob);
       }
     } catch (err) {
       console.error('Resync upload error:', track.id, err);
