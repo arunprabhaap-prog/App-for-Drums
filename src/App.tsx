@@ -7,16 +7,72 @@ import './App.css';
 
 type View = { name: 'tracks' } | { name: 'drummer-list' } | { name: 'drummer-song'; id: string };
 
+const DRUMMER_PASSCODE = '2323';
+const UNLOCK_KEY = 'drummer-view-unlocked';
+
 function App() {
   const { tracks, setTracks } = useTracks();
   const resynced = useRef(false);
   const [view, setView] = useState<View>({ name: 'tracks' });
+  const [passcodePrompt, setPasscodePrompt] = useState(false);
+  const [passcodeInput, setPasscodeInput] = useState('');
+  const [passcodeError, setPasscodeError] = useState(false);
 
   useEffect(() => {
     if (resynced.current || tracks.length === 0) return;
     resynced.current = true;
     resyncLocalBlobs(tracks);
   }, [tracks]);
+
+  function openDrummerView() {
+    if (sessionStorage.getItem(UNLOCK_KEY) === '1') {
+      setView({ name: 'drummer-list' });
+      return;
+    }
+    setPasscodeInput('');
+    setPasscodeError(false);
+    setPasscodePrompt(true);
+  }
+
+  function submitPasscode() {
+    if (passcodeInput === DRUMMER_PASSCODE) {
+      sessionStorage.setItem(UNLOCK_KEY, '1');
+      setPasscodePrompt(false);
+      setView({ name: 'drummer-list' });
+    } else {
+      setPasscodeError(true);
+    }
+  }
+
+  const passcodeModal = passcodePrompt && (
+    <div className="modal-backdrop" onClick={() => setPasscodePrompt(false)}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Drummer view</h3>
+        <label className="modal-field">
+          Enter passcode
+          <input
+            autoFocus
+            type="password"
+            inputMode="numeric"
+            value={passcodeInput}
+            onChange={(e) => {
+              setPasscodeInput(e.target.value);
+              setPasscodeError(false);
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && submitPasscode()}
+          />
+        </label>
+        {passcodeError && <p className="load-error">⚠ Incorrect passcode</p>}
+        <div className="modal-actions">
+          <div className="spacer" />
+          <button onClick={() => setPasscodePrompt(false)}>Cancel</button>
+          <button className="primary" onClick={submitPasscode}>
+            Unlock
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   if (view.name === 'drummer-list') {
     return (
@@ -44,7 +100,10 @@ function App() {
   }
 
   return (
-    <TrackList tracks={tracks} setTracks={setTracks} onOpenDrummerView={() => setView({ name: 'drummer-list' })} />
+    <>
+      <TrackList tracks={tracks} setTracks={setTracks} onOpenDrummerView={openDrummerView} />
+      {passcodeModal}
+    </>
   );
 }
 
