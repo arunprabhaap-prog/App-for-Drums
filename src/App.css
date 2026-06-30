@@ -482,6 +482,37 @@ input {
   cursor: pointer;
 }
 
+.block-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 2;
+}
+
+.block-handle.left {
+  left: 0;
+}
+
+.block-handle.right {
+  right: 0;
+}
+
+.block-handle:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.block-guide-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text);
+  opacity: 0.12;
+  pointer-events: none;
+}
+
 .drum-block.selecting {
   background: var(--accent);
   opacity: 0.35;

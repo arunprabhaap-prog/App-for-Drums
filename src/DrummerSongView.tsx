@@ -36,6 +36,8 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [dragRange, setDragRange] = useState<{ start: number; end: number } | null>(null);
   const dragStartRef = useRef<number | null>(null);
+  const [resizing, setResizing] = useState<{ id: string; edge: 'start' | 'end' } | null>(null);
+  const [resizePreview, setResizePreview] = useState<{ id: string; startTime: number; endTime: number } | null>(null);
   const [editing, setEditing] = useState<
     | { mode: 'new'; startTime: number; endTime: number }
     | { mode: 'edit'; block: DrumBlock }
@@ -190,6 +192,44 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   function handleWaveformClick(e: React.MouseEvent) {
     seek(pixelToTime(e.clientX));
   }
+
+  // Drag-resize an existing block's edge. Listens on window so the drag
+  // keeps tracking even if the cursor leaves the block/track while dragging.
+  useEffect(() => {
+    if (!resizing) return;
+    const original = blocks.find((b) => b.id === resizing.id);
+    if (!original) return;
+
+    function onMove(e: MouseEvent) {
+      const t = snapToBeat(pixelToTime(e.clientX));
+      if (resizing!.edge === 'start') {
+        setResizePreview({ id: resizing!.id, startTime: Math.min(t, original!.endTime - 0.05), endTime: original!.endTime });
+      } else {
+        setResizePreview({ id: resizing!.id, startTime: original!.startTime, endTime: Math.max(t, original!.startTime + 0.05) });
+      }
+    }
+
+    function onUp() {
+      setResizePreview((preview) => {
+        if (preview) {
+          const nextBlocks = blocks.map((b) =>
+            b.id === preview.id ? { ...b, startTime: preview.startTime, endTime: preview.endTime } : b
+          );
+          onUpdate({ ...track, drumBlocks: nextBlocks });
+        }
+        return null;
+      });
+      setResizing(null);
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resizing]);
 
   function handleTrackMouseDown(e: React.MouseEvent) {
     const t = snapToBeat(pixelToTime(e.clientX));
@@ -389,6 +429,15 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
                 style={{ left: g.time * PX_PER_SEC }}
               />
             ))}
+            {blocks.map((block) => {
+              const b = resizePreview?.id === block.id ? resizePreview : block;
+              return (
+                <div key={block.id}>
+                  <div className="block-guide-line" style={{ left: b.startTime * PX_PER_SEC }} />
+                  <div className="block-guide-line" style={{ left: b.endTime * PX_PER_SEC }} />
+                </div>
+              );
+            })}
           </div>
 
           <div
@@ -409,6 +458,15 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
                 style={{ left: g.time * PX_PER_SEC }}
               />
             ))}
+            {blocks.map((block) => {
+              const b = resizePreview?.id === block.id ? resizePreview : block;
+              return (
+                <div key={block.id}>
+                  <div className="block-guide-line" style={{ left: b.startTime * PX_PER_SEC }} />
+                  <div className="block-guide-line" style={{ left: b.endTime * PX_PER_SEC }} />
+                </div>
+              );
+            })}
             {dragRange && (
               <div
                 className="drum-block selecting"
@@ -418,24 +476,41 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
                 }}
               />
             )}
-            {blocks.map((block) => (
-              <div
-                key={block.id}
-                className="drum-block"
-                style={{
-                  left: block.startTime * PX_PER_SEC,
-                  width: Math.max(2, (block.endTime - block.startTime) * PX_PER_SEC - 2),
-                  background: block.color,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditing({ mode: 'edit', block });
-                }}
-              >
-                <div className="drum-block-label">{block.label || '(untitled)'}</div>
-                {block.note && <div className="drum-block-note">{block.note}</div>}
-              </div>
-            ))}
+            {blocks.map((block) => {
+              const b = resizePreview?.id === block.id ? resizePreview : block;
+              return (
+                <div
+                  key={block.id}
+                  className="drum-block"
+                  style={{
+                    left: b.startTime * PX_PER_SEC,
+                    width: Math.max(2, (b.endTime - b.startTime) * PX_PER_SEC - 2),
+                    background: block.color,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!resizing) setEditing({ mode: 'edit', block });
+                  }}
+                >
+                  <div
+                    className="block-handle left"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setResizing({ id: block.id, edge: 'start' });
+                    }}
+                  />
+                  <div className="drum-block-label">{block.label || '(untitled)'}</div>
+                  {block.note && <div className="drum-block-note">{block.note}</div>}
+                  <div
+                    className="block-handle right"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setResizing({ id: block.id, edge: 'end' });
+                    }}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
