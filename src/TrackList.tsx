@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { Track } from './types';
-import { deleteBlob, getBlob, newId, saveBlob } from './storage';
+import { deleteBlob, newId, saveBlob, syncBlob } from './storage';
 import TrackPlayer, { type TrackPlayerHandle } from './TrackPlayer';
 
 interface Props {
@@ -57,7 +57,7 @@ export default function TrackList({ tracks, setTracks }: Props) {
     for (const track of sorted) {
       setDlStatus(track.id, { status: 'syncing' });
       try {
-        await getBlob(track.id, track.mimeType);
+        await syncBlob(track.id, track.mimeType);
         setDlStatus(track.id, null);
         setRefreshKeys((prev) => new Map(prev).set(track.id, (prev.get(track.id) ?? 0) + 1));
       } catch (err) {

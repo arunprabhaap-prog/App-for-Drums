@@ -144,6 +144,31 @@ function uploadBlobInBackground(id: string, blob: Blob, onSynced?: (ok: boolean,
     });
 }
 
+// getBytes has no built-in timeout (unlike uploadBytes, which we already wrap),
+// so a stalled connection leaves callers hanging forever. Cap it generously,
+// scaled to a conservative 100kB/s minimum, matching the upload timeout logic.
+const DOWNLOAD_TIMEOUT_MS = 60000;
+
+function downloadWithTimeout(path: string): Promise<ArrayBuffer> {
+  return Promise.race([
+    getBytes(ref(storage, path)),
+    new Promise<ArrayBuffer>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('Download timed out - check your network connection')),
+        DOWNLOAD_TIMEOUT_MS,
+      ),
+    ),
+  ]);
+}
+
+function normalizeBlob(bytes: ArrayBuffer, mimeType?: string): Blob {
+  // audio/x-m4a is a non-standard alias that some browsers' media pipelines
+  // refuse to decode for a Blob reconstructed from raw bytes (no filename
+  // hint, unlike a locally-picked File) - normalize to the standard mp4 type.
+  const normalizedType = mimeType === 'audio/x-m4a' ? 'audio/mp4' : mimeType || 'audio/mpeg';
+  return new Blob([bytes], { type: normalizedType });
+}
+
 export async function getBlob(id: string, mimeType?: string): Promise<Blob | undefined> {
   const idb = await openDb();
   const local = await new Promise<Blob | undefined>((resolve, reject) => {
@@ -156,12 +181,20 @@ export async function getBlob(id: string, mimeType?: string): Promise<Blob | und
   if (local) return local.type ? local : new Blob([local], { type: mimeType || 'audio/mpeg' });
 
   await authReady;
-  const bytes = await getBytes(ref(storage, `audio/${id}`));
-  // audio/x-m4a is a non-standard alias that some browsers' media pipelines
-  // refuse to decode for a Blob reconstructed from raw bytes (no filename
-  // hint, unlike a locally-picked File) - normalize to the standard mp4 type.
-  const normalizedType = mimeType === 'audio/x-m4a' ? 'audio/mp4' : mimeType || 'audio/mpeg';
-  const blob = new Blob([bytes], { type: normalizedType });
+  const bytes = await downloadWithTimeout(`audio/${id}`);
+  const blob = normalizeBlob(bytes, mimeType);
+  await putLocalBlob(id, blob);
+  return blob;
+}
+
+// Forces a fresh download from Cloud Storage, bypassing any local IndexedDB
+// cache (unlike getBlob, which returns the cached copy if present). Used by
+// the manual "Sync tracks" button to actually fetch tracks uploaded from
+// other devices instead of silently no-op'ing on an already-cached id.
+export async function syncBlob(id: string, mimeType?: string): Promise<Blob> {
+  await authReady;
+  const bytes = await downloadWithTimeout(`audio/${id}`);
+  const blob = normalizeBlob(bytes, mimeType);
   await putLocalBlob(id, blob);
   return blob;
 }
