@@ -22,8 +22,14 @@ function loadCachedTracks(): Track[] {
 
 export function useTracks(): { tracks: Track[]; setTracks: Dispatch<SetStateAction<Track[]>> } {
   const [tracks, setTracksState] = useState<Track[]>(loadCachedTracks);
-  const tracksRef = useRef(tracks);
-  tracksRef.current = tracks;
+  // Source of truth for computing the next value of back-to-back setTracks
+  // calls. Updated synchronously inside setTracks itself (not just on render
+  // like a plain ref mirroring state would be) so that two updates fired in
+  // the same tick - e.g. adding a marker right as the audio element's
+  // onLoadedMetadata fires a duration update - chain off each other instead
+  // of the second one reading pre-render stale data and silently discarding
+  // the first's change.
+  const latestRef = useRef(tracks);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -32,6 +38,7 @@ export function useTracks(): { tracks: Track[]; setTracks: Dispatch<SetStateActi
         collection(db, TRACKS_COLLECTION),
         (snapshot) => {
           const remote = snapshot.docs.map((d) => d.data() as Track);
+          latestRef.current = remote;
           setTracksState(remote);
           localStorage.setItem(META_KEY, JSON.stringify(remote));
         },
@@ -42,10 +49,11 @@ export function useTracks(): { tracks: Track[]; setTracks: Dispatch<SetStateActi
   }, []);
 
   const setTracks: Dispatch<SetStateAction<Track[]>> = (value) => {
-    const next = typeof value === 'function' ? (value as (prev: Track[]) => Track[])(tracksRef.current) : value;
-    const prevIds = new Set(tracksRef.current.map((t) => t.id));
+    const next = typeof value === 'function' ? (value as (prev: Track[]) => Track[])(latestRef.current) : value;
+    const prevIds = new Set(latestRef.current.map((t) => t.id));
     const nextIds = new Set(next.map((t) => t.id));
 
+    latestRef.current = next;
     setTracksState(next);
     localStorage.setItem(META_KEY, JSON.stringify(next));
 
