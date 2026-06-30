@@ -3,7 +3,10 @@ import type { DrumBlock, Track } from './types';
 import { getBlob, newId } from './storage';
 import BlockEditor, { BLOCK_COLORS } from './BlockEditor';
 
-const PX_PER_SEC = 80;
+const DEFAULT_PX_PER_SEC = 80;
+const MIN_PX_PER_SEC = 20;
+const MAX_PX_PER_SEC = 320;
+const PEAK_RESOLUTION = 200; // samples/sec used to build the waveform peaks, independent of zoom
 const DEFAULT_BEATS_PER_BAR = 4;
 
 interface Props {
@@ -34,8 +37,11 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [pxPerSec, setPxPerSec] = useState(DEFAULT_PX_PER_SEC);
   const [dragRange, setDragRange] = useState<{ start: number; end: number } | null>(null);
   const dragStartRef = useRef<number | null>(null);
+  const [panning, setPanning] = useState(false);
+  const panRef = useRef<{ x: number; time: number; moved: boolean } | null>(null);
   const [resizing, setResizing] = useState<{ id: string; edge: 'start' | 'end' } | null>(null);
   const [resizePreview, setResizePreview] = useState<{ id: string; startTime: number; endTime: number } | null>(null);
   const [editing, setEditing] = useState<
@@ -52,11 +58,21 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   const tapTimesRef = useRef<number[]>([]);
   const [tapCount, setTapCount] = useState(0);
 
-  const width = Math.max(1, Math.round(duration * PX_PER_SEC));
+  const width = Math.max(1, Math.round(duration * pxPerSec));
   const blocks = track.drumBlocks ?? [];
   const sortedBlocks = [...blocks].sort((a, b) => a.startTime - b.startTime);
   const currentBlock = sortedBlocks.find((b) => currentTime >= b.startTime && currentTime < b.endTime) ?? null;
-  const nextBlock = sortedBlocks.find((b) => b.startTime > currentTime) ?? null;
+  const upcomingBlocks = sortedBlocks.filter((b) => b.endTime > currentTime && b.id !== currentBlock?.id);
+  const nextBlock = upcomingBlocks[0] ?? null;
+  const laterBlocks = upcomingBlocks.slice(1);
+
+  function zoomIn() {
+    setPxPerSec((z) => clamp(Math.round(z * 1.4), MIN_PX_PER_SEC, MAX_PX_PER_SEC));
+  }
+
+  function zoomOut() {
+    setPxPerSec((z) => clamp(Math.round(z / 1.4), MIN_PX_PER_SEC, MAX_PX_PER_SEC));
+  }
 
   // Load the blob, build an <audio> source for playback, and decode it
   // separately for waveform peaks - decodeAudioData detaches the buffer it's
@@ -82,7 +98,7 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
         if (cancelled) return;
         const channel = audioBuffer.getChannelData(0);
-        const columns = Math.max(1, Math.round(audioBuffer.duration * PX_PER_SEC));
+        const columns = Math.max(1, Math.round(audioBuffer.duration * PEAK_RESOLUTION));
         const samplesPerColumn = Math.max(1, Math.floor(channel.length / columns));
         const result: number[] = new Array(columns);
         for (let i = 0; i < columns; i++) {
@@ -124,8 +140,9 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
     const mid = height / 2;
     const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#aa3bff';
     ctx.fillStyle = accent;
-    for (let i = 0; i < peaks.length; i++) {
-      const h = Math.max(1, peaks[i] * (height - 8));
+    for (let i = 0; i < width; i++) {
+      const peakIndex = Math.min(peaks.length - 1, Math.floor((i / width) * peaks.length));
+      const h = Math.max(1, peaks[peakIndex] * (height - 8));
       ctx.fillRect(i, mid - h / 2, 1, h);
     }
   }, [peaks, width]);
@@ -148,7 +165,7 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   // Keeps the playhead fixed at the horizontal center of the viewport while
   // playback progresses, by sliding the track content underneath it instead
   // - clamped so the content doesn't scroll past its own start/end edges.
-  const trackOffset = clamp(containerWidth / 2 - currentTime * PX_PER_SEC, Math.min(0, containerWidth - width), 0);
+  const trackOffset = clamp(containerWidth / 2 - currentTime * pxPerSec, Math.min(0, containerWidth - width), 0);
 
   const beatInterval = bpm ? 60 / bpm : null;
   const barInterval = beatInterval ? beatInterval * beatsPerBar : null;
@@ -169,7 +186,7 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
     if (!scrollRef.current) return 0;
     const rect = scrollRef.current.getBoundingClientRect();
     const x = clientX - rect.left - trackOffset;
-    return clamp(x / PX_PER_SEC, 0, duration);
+    return clamp(x / pxPerSec, 0, duration);
   }
 
   function snapToBeat(time: number): number {
@@ -192,8 +209,35 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
     else audio.pause();
   }
 
-  function handleWaveformClick(e: React.MouseEvent) {
-    seek(pixelToTime(e.clientX));
+  // Click-and-drag panning across the waveform: a short drag scrubs/seeks,
+  // a longer drag just slides the track underneath the fixed playhead.
+  // Listens on window so the drag keeps tracking past the element's bounds.
+  useEffect(() => {
+    if (!panning) return;
+    function onMove(e: MouseEvent) {
+      const p = panRef.current;
+      if (!p) return;
+      if (Math.abs(e.clientX - p.x) > 4) p.moved = true;
+      if (p.moved) seek(clamp(p.time - (e.clientX - p.x) / pxPerSec, 0, duration));
+    }
+    function onUp(e: MouseEvent) {
+      const p = panRef.current;
+      if (p && !p.moved) seek(pixelToTime(e.clientX));
+      panRef.current = null;
+      setPanning(false);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panning, pxPerSec, duration]);
+
+  function startPan(e: React.MouseEvent) {
+    panRef.current = { x: e.clientX, time: currentTime, moved: false };
+    setPanning(true);
   }
 
   // Drag-resize an existing block's edge. Listens on window so the drag
@@ -364,6 +408,15 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
         <span className="time-display">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
+        <div className="zoom-controls">
+          <button onClick={zoomOut} disabled={pxPerSec <= MIN_PX_PER_SEC} aria-label="Zoom out" title="Zoom out">
+            −
+          </button>
+          <span className="zoom-level">{Math.round((pxPerSec / DEFAULT_PX_PER_SEC) * 100)}%</span>
+          <button onClick={zoomIn} disabled={pxPerSec >= MAX_PX_PER_SEC} aria-label="Zoom in" title="Zoom in">
+            +
+          </button>
+        </div>
       </div>
 
       <div className="tempo-panel">
@@ -398,19 +451,19 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
       </div>
 
       <p className="hint">
-        Click the waveform to scrub. Drag on the drum track below to add a segment
+        Click or drag the waveform to scrub. Drag on the drum track below to add a segment
         {bpm ? ' - it snaps to the beat grid.' : '.'}
       </p>
 
-      <div className="drummer-scroll" ref={scrollRef}>
+      <div className="drummer-scroll full-bleed" ref={scrollRef}>
         <div className="playhead" />
         <div className="drummer-tracks" style={{ width, transform: `translateX(${trackOffset}px)` }}>
-          <div className="flags-overlay" style={{ width }}>
+          <div className="flags-overlay" style={{ width }} onMouseDown={startPan}>
             {track.markers.map((m) => (
               <button
                 key={m.id}
                 className="flag-tag"
-                style={{ left: m.time * PX_PER_SEC, background: m.color }}
+                style={{ left: m.time * pxPerSec, background: m.color }}
                 onClick={() => seek(m.time)}
                 title={m.label}
               >
@@ -419,25 +472,25 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
             ))}
           </div>
 
-          <div className="waveform-row" onClick={handleWaveformClick} style={{ width }}>
+          <div className="waveform-row" onMouseDown={startPan} style={{ width }}>
             {!peaks && <div className="waveform-loading">Loading waveform…</div>}
             <canvas ref={canvasRef} />
             {track.markers.map((m) => (
-              <div key={m.id} className="flag-line" style={{ left: m.time * PX_PER_SEC, background: m.color }} />
+              <div key={m.id} className="flag-line" style={{ left: m.time * pxPerSec, background: m.color }} />
             ))}
             {gridLines.map((g) => (
               <div
                 key={g.time}
                 className={`grid-line ${g.isBar ? 'bar' : 'beat'}`}
-                style={{ left: g.time * PX_PER_SEC }}
+                style={{ left: g.time * pxPerSec }}
               />
             ))}
             {blocks.map((block) => {
               const b = resizePreview?.id === block.id ? resizePreview : block;
               return (
                 <div key={block.id}>
-                  <div className="block-guide-line" style={{ left: b.startTime * PX_PER_SEC }} />
-                  <div className="block-guide-line" style={{ left: b.endTime * PX_PER_SEC }} />
+                  <div className="block-guide-line" style={{ left: b.startTime * pxPerSec }} />
+                  <div className="block-guide-line" style={{ left: b.endTime * pxPerSec }} />
                 </div>
               );
             })}
@@ -458,15 +511,15 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
               <div
                 key={g.time}
                 className={`grid-line ${g.isBar ? 'bar' : 'beat'}`}
-                style={{ left: g.time * PX_PER_SEC }}
+                style={{ left: g.time * pxPerSec }}
               />
             ))}
             {blocks.map((block) => {
               const b = resizePreview?.id === block.id ? resizePreview : block;
               return (
                 <div key={block.id}>
-                  <div className="block-guide-line" style={{ left: b.startTime * PX_PER_SEC }} />
-                  <div className="block-guide-line" style={{ left: b.endTime * PX_PER_SEC }} />
+                  <div className="block-guide-line" style={{ left: b.startTime * pxPerSec }} />
+                  <div className="block-guide-line" style={{ left: b.endTime * pxPerSec }} />
                 </div>
               );
             })}
@@ -474,8 +527,8 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
               <div
                 className="drum-block selecting"
                 style={{
-                  left: Math.min(dragRange.start, dragRange.end) * PX_PER_SEC,
-                  width: Math.abs(dragRange.end - dragRange.start) * PX_PER_SEC,
+                  left: Math.min(dragRange.start, dragRange.end) * pxPerSec,
+                  width: Math.abs(dragRange.end - dragRange.start) * pxPerSec,
                 }}
               />
             )}
@@ -486,8 +539,8 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
                   key={block.id}
                   className="drum-block"
                   style={{
-                    left: b.startTime * PX_PER_SEC,
-                    width: Math.max(2, (b.endTime - b.startTime) * PX_PER_SEC - 2),
+                    left: b.startTime * pxPerSec,
+                    width: Math.max(2, (b.endTime - b.startTime) * pxPerSec - 2),
                     background: block.color,
                   }}
                   onClick={(e) => {
@@ -539,6 +592,18 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
           </div>
         ) : (
           !currentBlock && <div className="next-up-row empty">No upcoming blocks</div>
+        )}
+        {laterBlocks.length > 0 && (
+          <ul className="upcoming-list">
+            {laterBlocks.map((b) => (
+              <li key={b.id} className="upcoming-item">
+                <span className="upcoming-dot" style={{ background: b.color }} />
+                <span className="upcoming-label">{b.label || '(untitled)'}</span>
+                <span className="upcoming-time">{formatTime(b.startTime)}</span>
+                {b.note && <span className="upcoming-note">{b.note}</span>}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 

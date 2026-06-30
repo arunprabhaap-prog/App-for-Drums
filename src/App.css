@@ -351,6 +351,44 @@ input {
   padding: 8px 0 0;
 }
 
+.drummer-scroll.full-bleed {
+  width: 100vw;
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.zoom-controls button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.zoom-level {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  min-width: 40px;
+  text-align: center;
+}
+
 .drummer-tracks {
   position: relative;
 }
@@ -564,6 +602,48 @@ input {
 
 .next-up-note {
   font-size: 13px;
+  color: var(--text);
+}
+
+.upcoming-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.upcoming-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.upcoming-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.upcoming-label {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.upcoming-time {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.upcoming-note {
+  font-size: 12px;
   color: var(--text);
 }
 
