@@ -168,85 +168,83 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
 
   const errorNotice = loadError ? <p className="load-error">⚠ Couldn't load audio: {loadError}</p> : null;
 
-  if (compact) {
-    return (
-      <>
-        {audio}
-        {errorNotice}
-      </>
-    );
-  }
-
+  // audio and errorNotice must stay in the same position in the tree
+  // regardless of `compact` - if the root element type changes (Fragment vs
+  // div) React tears down and remounts the whole subtree, which pauses
+  // playback every time the track is expanded or collapsed.
   return (
-    <div className="track-player">
+    <>
       {audio}
       {errorNotice}
+      {!compact && (
+        <div className="track-player">
+          <div className="player-controls">
+            <span className="time-display">
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+          </div>
 
-      <div className="player-controls">
-        <span className="time-display">
-          {formatTime(currentTime)} / {formatTime(duration)}
-        </span>
-      </div>
+          <p className="hint">Tap the timeline to drop a flag at that point.</p>
 
-      <p className="hint">Tap the timeline to drop a flag at that point.</p>
+          <div className="timeline" ref={timelineRef} onClick={handleTimelineClick}>
+            <div
+              className="timeline-progress"
+              style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }}
+            />
+            {track.markers.map((m) => (
+              <button
+                key={m.id}
+                className="timeline-flag"
+                style={{ left: duration ? `${(m.time / duration) * 100}%` : '0%', background: m.color }}
+                title={m.label}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  seek(m.time);
+                }}
+              />
+            ))}
+          </div>
 
-      <div className="timeline" ref={timelineRef} onClick={handleTimelineClick}>
-        <div
-          className="timeline-progress"
-          style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }}
-        />
-        {track.markers.map((m) => (
-          <button
-            key={m.id}
-            className="timeline-flag"
-            style={{ left: duration ? `${(m.time / duration) * 100}%` : '0%', background: m.color }}
-            title={m.label}
-            onClick={(e) => {
-              e.stopPropagation();
-              seek(m.time);
-            }}
-          />
-        ))}
-      </div>
+          {pending && (
+            <div className="marker-add-form">
+              <span className="marker-add-time">{formatTime(pending.time)}</span>
+              <input
+                autoFocus
+                placeholder="Label, e.g. Breakdown, Groove..."
+                value={labelDraft}
+                onChange={(e) => setLabelDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addMarker()}
+              />
+              <button className="primary" onClick={addMarker}>
+                Add flag
+              </button>
+              <button onClick={() => setPending(null)}>Cancel</button>
+            </div>
+          )}
 
-      {pending && (
-        <div className="marker-add-form">
-          <span className="marker-add-time">{formatTime(pending.time)}</span>
-          <input
-            autoFocus
-            placeholder="Label, e.g. Breakdown, Groove..."
-            value={labelDraft}
-            onChange={(e) => setLabelDraft(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addMarker()}
-          />
-          <button className="primary" onClick={addMarker}>
-            Add flag
-          </button>
-          <button onClick={() => setPending(null)}>Cancel</button>
+          {track.markers.length > 0 && (
+            <ul className="marker-list">
+              {track.markers.map((m) => (
+                <li key={m.id} className="marker-item">
+                  <span className="marker-dot" style={{ background: m.color }} />
+                  <button className="marker-jump" onClick={() => seek(m.time)}>
+                    {formatTime(m.time)}
+                  </button>
+                  <input
+                    className="marker-label-input"
+                    value={m.label}
+                    onChange={(e) => renameMarker(m.id, e.target.value)}
+                  />
+                  <button className="danger" onClick={() => deleteMarker(m.id)}>
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
-
-      {track.markers.length > 0 && (
-        <ul className="marker-list">
-          {track.markers.map((m) => (
-            <li key={m.id} className="marker-item">
-              <span className="marker-dot" style={{ background: m.color }} />
-              <button className="marker-jump" onClick={() => seek(m.time)}>
-                {formatTime(m.time)}
-              </button>
-              <input
-                className="marker-label-input"
-                value={m.label}
-                onChange={(e) => renameMarker(m.id, e.target.value)}
-              />
-              <button className="danger" onClick={() => deleteMarker(m.id)}>
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    </>
   );
 });
 
