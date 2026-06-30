@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Track, Marker } from './types';
 import { getBlob, newId } from './storage';
 
@@ -7,10 +7,16 @@ const MARKER_COLORS = [
   '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899',
 ];
 
+export interface TrackPlayerHandle {
+  togglePlay: () => void;
+}
+
 interface Props {
   track: Track;
+  compact: boolean;
   autoPlay: boolean;
   onConsumeAutoPlay: () => void;
+  onPlayingChange: (playing: boolean) => void;
   onUpdate: (track: Track) => void;
 }
 
@@ -21,7 +27,10 @@ function formatTime(t: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function TrackPlayer({ track, autoPlay, onConsumeAutoPlay, onUpdate }: Props) {
+const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
+  { track, compact, autoPlay, onConsumeAutoPlay, onPlayingChange, onUpdate },
+  ref,
+) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -61,6 +70,8 @@ export default function TrackPlayer({ track, autoPlay, onConsumeAutoPlay, onUpda
     if (audio.paused) audio.play().catch(() => {});
     else audio.pause();
   }
+
+  useImperativeHandle(ref, () => ({ togglePlay }));
 
   function seek(time: number, play = true) {
     const audio = audioRef.current;
@@ -102,23 +113,36 @@ export default function TrackPlayer({ track, autoPlay, onConsumeAutoPlay, onUpda
     onUpdate({ ...track, markers: track.markers.map((m) => (m.id === id ? { ...m, label } : m)) });
   }
 
+  const audio = url && (
+    <audio
+      ref={audioRef}
+      src={url}
+      onLoadedMetadata={(e) => {
+        const d = e.currentTarget.duration;
+        setDuration(d);
+        if (d !== track.duration) onUpdate({ ...track, duration: d });
+      }}
+      onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+      onPlay={() => {
+        setIsPlaying(true);
+        onPlayingChange(true);
+      }}
+      onPause={() => {
+        setIsPlaying(false);
+        onPlayingChange(false);
+      }}
+      onEnded={() => {
+        setIsPlaying(false);
+        onPlayingChange(false);
+      }}
+    />
+  );
+
+  if (compact) return audio || null;
+
   return (
     <div className="track-player">
-      {url && (
-        <audio
-          ref={audioRef}
-          src={url}
-          onLoadedMetadata={(e) => {
-            const d = e.currentTarget.duration;
-            setDuration(d);
-            if (d !== track.duration) onUpdate({ ...track, duration: d });
-          }}
-          onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onEnded={() => setIsPlaying(false)}
-        />
-      )}
+      {audio}
 
       <div className="player-controls">
         <button className="big-play-btn" onClick={togglePlay}>
@@ -189,4 +213,6 @@ export default function TrackPlayer({ track, autoPlay, onConsumeAutoPlay, onUpda
       )}
     </div>
   );
-}
+});
+
+export default TrackPlayer;

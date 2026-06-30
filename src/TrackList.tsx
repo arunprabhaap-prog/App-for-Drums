@@ -1,7 +1,7 @@
 import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { Track } from './types';
 import { deleteBlob, newId, saveBlob } from './storage';
-import TrackPlayer from './TrackPlayer';
+import TrackPlayer, { type TrackPlayerHandle } from './TrackPlayer';
 
 interface Props {
   tracks: Track[];
@@ -12,7 +12,10 @@ export default function TrackList({ tracks, setTracks }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const replaceIdRef = useRef<string | null>(null);
+  const playerRefs = useRef<Map<string, TrackPlayerHandle>>(new Map());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
+  const [pendingAutoPlay, setPendingAutoPlay] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
 
   const sorted = [...tracks].sort((a, b) => a.order - b.order);
@@ -58,10 +61,25 @@ export default function TrackList({ tracks, setTracks }: Props) {
     setTracks((prev) => prev.filter((t) => t.id !== id));
     if (expandedId === id) setExpandedId(null);
     if (playingId === id) setPlayingId(null);
+    setActiveIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    playerRefs.current.delete(id);
   }
 
   function renameTrack(id: string, title: string) {
     setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
+  }
+
+  function handlePlayClick(id: string) {
+    if (!activeIds.has(id)) {
+      setActiveIds((prev) => new Set(prev).add(id));
+      setPendingAutoPlay(id);
+    } else {
+      playerRefs.current.get(id)?.togglePlay();
+    }
   }
 
   function startReplaceTrack(id: string) {
@@ -120,13 +138,10 @@ export default function TrackList({ tracks, setTracks }: Props) {
             <div className="track-row">
               <button
                 className="play-btn"
-                onClick={() => {
-                  setExpandedId(track.id);
-                  setPlayingId(track.id);
-                }}
-                aria-label="Play"
+                onClick={() => handlePlayClick(track.id)}
+                aria-label={playingId === track.id ? 'Pause' : 'Play'}
               >
-                ▶
+                {playingId === track.id ? '⏸' : '▶'}
               </button>
 
               <input
@@ -149,8 +164,9 @@ export default function TrackList({ tracks, setTracks }: Props) {
                 <button
                   className="expand-btn"
                   onClick={() => setExpandedId(expandedId === track.id ? null : track.id)}
+                  aria-label={expandedId === track.id ? 'Hide flags' : 'Show flags'}
                 >
-                  {expandedId === track.id ? 'Hide' : 'Flags'}
+                  Flags {expandedId === track.id ? '▲' : '▼'}
                 </button>
                 <button onClick={() => startReplaceTrack(track.id)} aria-label="Replace audio">
                   ⟳
@@ -161,11 +177,19 @@ export default function TrackList({ tracks, setTracks }: Props) {
               </div>
             </div>
 
-            {expandedId === track.id && (
+            {(activeIds.has(track.id) || expandedId === track.id) && (
               <TrackPlayer
+                ref={(el) => {
+                  if (el) playerRefs.current.set(track.id, el);
+                  else playerRefs.current.delete(track.id);
+                }}
                 track={track}
-                autoPlay={playingId === track.id}
-                onConsumeAutoPlay={() => setPlayingId(null)}
+                compact={expandedId !== track.id}
+                autoPlay={pendingAutoPlay === track.id}
+                onConsumeAutoPlay={() => setPendingAutoPlay(null)}
+                onPlayingChange={(playing) =>
+                  setPlayingId((prev) => (playing ? track.id : prev === track.id ? null : prev))
+                }
                 onUpdate={(updated) =>
                   setTracks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
                 }

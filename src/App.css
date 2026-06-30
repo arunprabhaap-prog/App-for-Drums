@@ -192,6 +192,7 @@ input {
   top: -4px;
   width: 3px;
   height: 56px;
+  padding: 0;
   border: none;
   border-radius: 2px;
   transform: translateX(-50%);
