@@ -66,7 +66,14 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [track.id, track.duration]);
+    // track.duration is intentionally excluded: onLoadedMetadata below writes
+    // a duration back onto the track, and including it here would re-trigger
+    // this effect on every write - reloading the audio (interrupting
+    // playback) and re-firing onLoadedMetadata in a loop, with each iteration
+    // writing a stale `track` closure that could clobber markers added or
+    // removed in between.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track.id]);
 
   function playNow() {
     const audio = audioRef.current;
@@ -152,7 +159,11 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
       onLoadedMetadata={(e) => {
         const d = e.currentTarget.duration;
         setDuration(d);
-        if (d !== track.duration) onUpdate({ ...track, duration: d });
+        // Decoders can report a duration that's a hair off from a previous
+        // load (floating-point jitter), not a meaningful change - only
+        // persist when it actually differs enough to matter, otherwise this
+        // would write back on nearly every load.
+        if (isFinite(d) && Math.abs(d - track.duration) > 0.5) onUpdate({ ...track, duration: d });
       }}
       onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
       onPlay={() => onPlayingChange(true)}
