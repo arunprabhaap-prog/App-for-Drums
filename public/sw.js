@@ -1,4 +1,4 @@
-const CACHE_NAME = 'drum-tracks-v3';
+const CACHE_NAME = 'drum-tracks-v4';
 const BASE = self.location.pathname.replace(/sw\.js$/, '');
 
 self.addEventListener('install', (event) => {
@@ -25,12 +25,13 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     fetch(request)
-      .then((response) =>
-        caches.open(CACHE_NAME).then((cache) => {
+      .then((response) => {
+        if (!response.ok) return response;
+        return caches.open(CACHE_NAME).then((cache) => {
           cache.put(request, response.clone());
           return response;
-        }),
-      )
+        });
+      })
       .catch(() => caches.match(request).then((cached) => cached ?? caches.match(BASE))),
   );
 });
