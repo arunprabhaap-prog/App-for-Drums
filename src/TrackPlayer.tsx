@@ -33,16 +33,20 @@ export default function TrackPlayer({ track, autoPlay, onConsumeAutoPlay, onUpda
 
   useEffect(() => {
     let objectUrl: string | null = null;
+    let cancelled = false;
+    setUrl(null);
+    setCurrentTime(0);
+    setDuration(track.duration);
     getBlob(track.id).then((blob) => {
-      if (blob) {
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      }
+      if (cancelled || !blob) return;
+      objectUrl = URL.createObjectURL(blob);
+      setUrl(objectUrl);
     });
     return () => {
+      cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [track.id]);
+  }, [track.id, track.duration]);
 
   useEffect(() => {
     if (autoPlay && audioRef.current && url) {

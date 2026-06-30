@@ -10,6 +10,8 @@ interface Props {
 
 export default function TrackList({ tracks, setTracks }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const replaceIdRef = useRef<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
 
@@ -61,9 +63,21 @@ export default function TrackList({ tracks, setTracks }: Props) {
     setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
   }
 
+  function startReplaceTrack(id: string) {
+    replaceIdRef.current = id;
+    replaceInputRef.current?.click();
+  }
+
+  async function handleReplaceFile(files: FileList | null) {
+    const id = replaceIdRef.current;
+    if (!files || files.length === 0 || !id) return;
+    await saveBlob(id, files[0]);
+    setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, markers: [], duration: 0 } : t)));
+  }
+
   return (
     <div className="page">
-      <h1>Drum Tracks</h1>
+      <h1>Aarpo Tracks</h1>
 
       <div className="upload-bar">
         <input
@@ -74,6 +88,16 @@ export default function TrackList({ tracks, setTracks }: Props) {
           hidden
           onChange={(e) => {
             handleFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        <input
+          ref={replaceInputRef}
+          type="file"
+          accept="audio/*"
+          hidden
+          onChange={(e) => {
+            handleReplaceFile(e.target.files);
             e.target.value = '';
           }}
         />
@@ -123,6 +147,9 @@ export default function TrackList({ tracks, setTracks }: Props) {
                   onClick={() => setExpandedId(expandedId === track.id ? null : track.id)}
                 >
                   {expandedId === track.id ? 'Hide' : 'Flags'}
+                </button>
+                <button onClick={() => startReplaceTrack(track.id)} aria-label="Replace audio">
+                  ⟳
                 </button>
                 <button className="danger" onClick={() => deleteTrack(track.id)} aria-label="Delete">
                   ✕
