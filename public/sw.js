@@ -1,9 +1,10 @@
-const CACHE_NAME = 'drum-tracks-v1';
+const CACHE_NAME = 'drum-tracks-v2';
+const BASE = self.location.pathname.replace(/sw\.js$/, '');
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      cache.addAll(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png']),
+      cache.addAll([BASE, `${BASE}manifest.webmanifest`, `${BASE}icon-192.png`, `${BASE}icon-512.png`]),
     ),
   );
   self.skipWaiting();
@@ -24,11 +25,12 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     fetch(request)
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        return response;
-      })
-      .catch(() => caches.match(request).then((cached) => cached ?? caches.match('/'))),
+      .then((response) =>
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(request, response.clone());
+          return response;
+        }),
+      )
+      .catch(() => caches.match(request).then((cached) => cached ?? caches.match(BASE))),
   );
 });

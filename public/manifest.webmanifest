@@ -2,21 +2,21 @@
   "name": "Drum Tracks",
   "short_name": "Drum Tracks",
   "description": "Play drum reference tracks and jump to flagged points like breakdowns and grooves.",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#16171d",
   "theme_color": "#16171d",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.png",
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
