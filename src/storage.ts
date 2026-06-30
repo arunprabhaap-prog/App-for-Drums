@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
+import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
 import type { Track } from './types';
+import { authReady, db, storage } from './firebase';
 
 const META_KEY = 'drum-tracks-meta';
 const DB_NAME = 'drum-tracks-db';
 const STORE_NAME = 'blobs';
+const TRACKS_COLLECTION = 'tracks';
 
-function loadTracks(): Track[] {
+function loadCachedTracks(): Track[] {
   try {
     const raw = localStorage.getItem(META_KEY);
     if (!raw) return [];
@@ -15,12 +20,49 @@ function loadTracks(): Track[] {
   }
 }
 
-export function useTracks() {
-  const [tracks, setTracks] = useState<Track[]>(loadTracks);
+export function useTracks(): { tracks: Track[]; setTracks: Dispatch<SetStateAction<Track[]>> } {
+  const [tracks, setTracksState] = useState<Track[]>(loadCachedTracks);
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
 
   useEffect(() => {
-    localStorage.setItem(META_KEY, JSON.stringify(tracks));
-  }, [tracks]);
+    let unsubscribe: (() => void) | undefined;
+    authReady.then(() => {
+      unsubscribe = onSnapshot(
+        collection(db, TRACKS_COLLECTION),
+        (snapshot) => {
+          const remote = snapshot.docs.map((d) => d.data() as Track);
+          setTracksState(remote);
+          localStorage.setItem(META_KEY, JSON.stringify(remote));
+        },
+        (err) => console.error('Firestore sync error:', err.code, err.message),
+      );
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  const setTracks: Dispatch<SetStateAction<Track[]>> = (value) => {
+    const next = typeof value === 'function' ? (value as (prev: Track[]) => Track[])(tracksRef.current) : value;
+    const prevIds = new Set(tracksRef.current.map((t) => t.id));
+    const nextIds = new Set(next.map((t) => t.id));
+
+    setTracksState(next);
+    localStorage.setItem(META_KEY, JSON.stringify(next));
+
+    authReady.then(() => {
+      next.forEach((track) => {
+        setDoc(doc(db, TRACKS_COLLECTION, track.id), track).catch((err) =>
+          console.error('Firestore write error:', err.code, err.message),
+        );
+      });
+      prevIds.forEach((id) => {
+        if (!nextIds.has(id))
+          deleteDoc(doc(db, TRACKS_COLLECTION, id)).catch((err) =>
+            console.error('Firestore delete error:', err.code, err.message),
+          );
+      });
+    });
+  };
 
   return { tracks, setTracks };
 }
@@ -40,36 +82,52 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-export async function saveBlob(id: string, blob: Blob): Promise<void> {
-  const db = await openDb();
+async function putLocalBlob(id: string, blob: Blob): Promise<void> {
+  const idb = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = idb.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).put(blob, id);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
-  db.close();
+  idb.close();
+}
+
+export async function saveBlob(id: string, blob: Blob): Promise<void> {
+  await putLocalBlob(id, blob);
+  authReady.then(() => uploadBytes(ref(storage, `audio/${id}`), blob)).catch(() => {});
 }
 
 export async function getBlob(id: string): Promise<Blob | undefined> {
-  const db = await openDb();
-  const result = await new Promise<Blob | undefined>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
+  const idb = await openDb();
+  const local = await new Promise<Blob | undefined>((resolve, reject) => {
+    const tx = idb.transaction(STORE_NAME, 'readonly');
     const req = tx.objectStore(STORE_NAME).get(id);
     req.onsuccess = () => resolve(req.result as Blob | undefined);
     req.onerror = () => reject(req.error);
   });
-  db.close();
-  return result;
+  idb.close();
+  if (local) return local;
+
+  try {
+    await authReady;
+    const bytes = await getBytes(ref(storage, `audio/${id}`));
+    const blob = new Blob([bytes]);
+    await putLocalBlob(id, blob);
+    return blob;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function deleteBlob(id: string): Promise<void> {
-  const db = await openDb();
+  const idb = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = idb.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).delete(id);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
-  db.close();
+  idb.close();
+  authReady.then(() => deleteObject(ref(storage, `audio/${id}`))).catch(() => {});
 }
