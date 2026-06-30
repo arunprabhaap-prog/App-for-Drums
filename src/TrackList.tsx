@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { Track } from './types';
-import { deleteBlob, newId, saveBlob, syncBlob } from './storage';
+import { deleteBlob, hasLocalBlob, newId, saveBlob, syncBlob } from './storage';
 import TrackPlayer, { type TrackPlayerHandle } from './TrackPlayer';
 
 interface Props {
@@ -20,6 +20,7 @@ export default function TrackList({ tracks, setTracks }: Props) {
   const [downloadStatus, setDownloadStatus] = useState<Map<string, SyncState>>(new Map());
   const [refreshKeys, setRefreshKeys] = useState<Map<string, number>>(new Map());
   const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [readyIds, setReadyIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const hasSyncing = [...syncStatus.values()].some((s) => s.status === 'syncing');
@@ -32,7 +33,42 @@ export default function TrackList({ tracks, setTracks }: Props) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [syncStatus]);
 
-  const sorted = [...tracks].sort((a, b) => a.order - b.order);
+  // Auto-download any track that isn't fully cached locally yet, so the list
+  // only ever shows tracks that are guaranteed to play on the first tap -
+  // this is what makes a track uploaded on another device show up playable
+  // here without the user having to press "Sync tracks" manually.
+  useEffect(() => {
+    let cancelled = false;
+    async function ensureReady() {
+      for (const track of [...tracks].sort((a, b) => a.order - b.order)) {
+        if (cancelled) return;
+        const local = await hasLocalBlob(track.id);
+        if (cancelled) return;
+        if (local) {
+          setReadyIds((prev) => (prev.has(track.id) ? prev : new Set(prev).add(track.id)));
+          continue;
+        }
+        setDlStatus(track.id, { status: 'syncing' });
+        try {
+          await syncBlob(track.id, track.mimeType);
+          if (cancelled) return;
+          setReadyIds((prev) => new Set(prev).add(track.id));
+          setDlStatus(track.id, null);
+        } catch (err) {
+          if (cancelled) return;
+          const message = (err as { code?: string; message?: string })?.code || (err as Error)?.message || String(err);
+          setDlStatus(track.id, { status: 'error', message });
+        }
+      }
+    }
+    ensureReady();
+    return () => {
+      cancelled = true;
+    };
+  }, [tracks]);
+
+  const sorted = [...tracks].filter((t) => readyIds.has(t.id)).sort((a, b) => a.order - b.order);
+  const notReadyCount = tracks.length - sorted.length;
 
   function setStatus(id: string, state: SyncState | null) {
     setSyncStatus((prev) => {
@@ -54,11 +90,12 @@ export default function TrackList({ tracks, setTracks }: Props) {
 
   async function syncAllTracks() {
     setIsSyncingAll(true);
-    for (const track of sorted) {
+    for (const track of [...tracks].sort((a, b) => a.order - b.order)) {
       setDlStatus(track.id, { status: 'syncing' });
       try {
         await syncBlob(track.id, track.mimeType);
         setDlStatus(track.id, null);
+        setReadyIds((prev) => (prev.has(track.id) ? prev : new Set(prev).add(track.id)));
         setRefreshKeys((prev) => new Map(prev).set(track.id, (prev.get(track.id) ?? 0) + 1));
       } catch (err) {
         const message = (err as { code?: string; message?: string })?.code || (err as Error)?.message || String(err);
@@ -110,6 +147,12 @@ export default function TrackList({ tracks, setTracks }: Props) {
     if (!confirm('Delete this track and all its flags?')) return;
     await deleteBlob(id);
     setTracks((prev) => prev.filter((t) => t.id !== id));
+    setReadyIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     if (expandedId === id) setExpandedId(null);
     if (playingId === id) setPlayingId(null);
     playerRefs.current.delete(id);
@@ -170,12 +213,16 @@ export default function TrackList({ tracks, setTracks }: Props) {
         <button className="primary" onClick={() => fileInputRef.current?.click()}>
           + Upload tracks
         </button>
-        <button onClick={syncAllTracks} disabled={isSyncingAll || sorted.length === 0}>
+        <button onClick={syncAllTracks} disabled={isSyncingAll || tracks.length === 0}>
           {isSyncingAll ? '⬇ Syncing…' : '⬇ Sync tracks'}
         </button>
       </div>
 
-      {sorted.length === 0 && (
+      {notReadyCount > 0 && (
+        <p className="empty-hint">⬇ Preparing {notReadyCount} track{notReadyCount === 1 ? '' : 's'}…</p>
+      )}
+
+      {tracks.length === 0 && (
         <p className="empty-hint">No tracks yet. Upload your drum audio files to get started.</p>
       )}
 

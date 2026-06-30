@@ -91,6 +91,18 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+export async function hasLocalBlob(id: string): Promise<boolean> {
+  const idb = await openDb();
+  const count = await new Promise<number>((resolve, reject) => {
+    const tx = idb.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).count(id);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  idb.close();
+  return count > 0;
+}
+
 async function putLocalBlob(id: string, blob: Blob): Promise<void> {
   const idb = await openDb();
   await new Promise<void>((resolve, reject) => {
