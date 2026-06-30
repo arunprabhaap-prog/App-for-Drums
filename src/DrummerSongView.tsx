@@ -54,6 +54,9 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
 
   const width = Math.max(1, Math.round(duration * PX_PER_SEC));
   const blocks = track.drumBlocks ?? [];
+  const sortedBlocks = [...blocks].sort((a, b) => a.startTime - b.startTime);
+  const currentBlock = sortedBlocks.find((b) => currentTime >= b.startTime && currentTime < b.endTime) ?? null;
+  const nextBlock = sortedBlocks.find((b) => b.startTime > currentTime) ?? null;
 
   // Load the blob, build an <audio> source for playback, and decode it
   // separately for waveform peaks - decodeAudioData detaches the buffer it's
@@ -513,6 +516,30 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
             })}
           </div>
         </div>
+      </div>
+
+      <div className="next-up-panel">
+        {currentBlock && (
+          <div className="next-up-row now">
+            <span className="next-up-label">Now playing</span>
+            <span className="next-up-block" style={{ background: currentBlock.color }}>
+              {currentBlock.label || '(untitled)'}
+            </span>
+            {currentBlock.note && <span className="next-up-note">{currentBlock.note}</span>}
+          </div>
+        )}
+        {nextBlock ? (
+          <div className="next-up-row">
+            <span className="next-up-label">Next up</span>
+            <span className="next-up-block" style={{ background: nextBlock.color }}>
+              {nextBlock.label || '(untitled)'}
+            </span>
+            <span className="next-up-time">in {formatTime(nextBlock.startTime - currentTime)}</span>
+            {nextBlock.note && <span className="next-up-note">{nextBlock.note}</span>}
+          </div>
+        ) : (
+          !currentBlock && <div className="next-up-row empty">No upcoming blocks</div>
+        )}
       </div>
 
       {editing && editing.mode === 'new' && (

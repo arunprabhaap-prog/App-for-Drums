@@ -513,6 +513,60 @@ input {
   pointer-events: none;
 }
 
+.next-up-panel {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.next-up-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+}
+
+.next-up-row.now {
+  border-color: var(--accent);
+}
+
+.next-up-row.empty {
+  color: var(--text);
+  font-style: italic;
+}
+
+.next-up-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.next-up-block {
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.next-up-time {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.next-up-note {
+  font-size: 13px;
+  color: var(--text);
+}
+
 .drum-block.selecting {
   background: var(--accent);
   opacity: 0.35;
