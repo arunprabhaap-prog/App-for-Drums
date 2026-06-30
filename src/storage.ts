@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
+import { deleteObject, getBytes, ref, uploadBytesResumable } from 'firebase/storage';
 import type { Track } from './types';
 import { authReady, db, storage } from './firebase';
 
@@ -102,6 +102,38 @@ async function putLocalBlob(id: string, blob: Blob): Promise<void> {
   idb.close();
 }
 
+const STALL_TIMEOUT_MS = 30000;
+
+// Uploads via the resumable API so we get progress events, and only time out
+// when no progress has been made for STALL_TIMEOUT_MS - a flat total-time
+// timeout was killing legitimate uploads of large files on slow connections.
+function uploadWithStallTimeout(path: string, blob: Blob): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(ref(storage, path), blob);
+    let stallTimer: ReturnType<typeof setTimeout>;
+    const resetStallTimer = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        task.cancel();
+        reject(new Error('Upload stalled - no progress for 30s, check your network connection'));
+      }, STALL_TIMEOUT_MS);
+    };
+    resetStallTimer();
+    task.on(
+      'state_changed',
+      () => resetStallTimer(),
+      (err) => {
+        clearTimeout(stallTimer);
+        reject(err);
+      },
+      () => {
+        clearTimeout(stallTimer);
+        resolve();
+      },
+    );
+  });
+}
+
 export async function saveBlob(
   id: string,
   blob: Blob,
@@ -113,14 +145,7 @@ export async function saveBlob(
 
 function uploadBlobInBackground(id: string, blob: Blob, onSynced?: (ok: boolean, error?: string) => void): void {
   authReady
-    .then(() =>
-      Promise.race([
-        uploadBytes(ref(storage, `audio/${id}`), blob),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Upload timed out after 30s - check your network connection')), 30000),
-        ),
-      ]),
-    )
+    .then(() => uploadWithStallTimeout(`audio/${id}`, blob))
     .then(() => onSynced?.(true))
     .catch((err) => {
       console.error('Storage upload error:', err);
@@ -162,10 +187,7 @@ export async function resyncLocalBlobs(tracks: Track[]): Promise<void> {
       });
       idb.close();
       if (blob) {
-        await Promise.race([
-          uploadBytes(ref(storage, `audio/${track.id}`), blob),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Resync upload timed out after 30s')), 30000)),
-        ]);
+        await uploadWithStallTimeout(`audio/${track.id}`, blob);
       }
     } catch (err) {
       console.error('Resync upload error:', track.id, err);
