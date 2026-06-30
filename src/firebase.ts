@@ -23,7 +23,10 @@ export const authReady: Promise<void> = new Promise((resolve) => {
       unsubscribe();
       resolve();
     } else {
-      signInAnonymously(auth).catch(() => resolve());
+      signInAnonymously(auth).catch((err) => {
+        console.error('Anonymous sign-in failed:', err.code, err.message);
+        resolve();
+      });
     }
   });
 });
