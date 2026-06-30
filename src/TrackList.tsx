@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { Track } from './types';
-import { deleteBlob, newId, saveBlob } from './storage';
+import { deleteBlob, getBlob, newId, saveBlob } from './storage';
 import TrackPlayer, { type TrackPlayerHandle } from './TrackPlayer';
 
 interface Props {
@@ -17,6 +17,9 @@ export default function TrackList({ tracks, setTracks }: Props) {
   const [playingId, setPlayingId] = useState<string | null>(null);
   type SyncState = { status: 'syncing' } | { status: 'error'; message: string };
   const [syncStatus, setSyncStatus] = useState<Map<string, SyncState>>(new Map());
+  const [downloadStatus, setDownloadStatus] = useState<Map<string, SyncState>>(new Map());
+  const [refreshKeys, setRefreshKeys] = useState<Map<string, number>>(new Map());
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
 
   useEffect(() => {
     const hasSyncing = [...syncStatus.values()].some((s) => s.status === 'syncing');
@@ -38,6 +41,31 @@ export default function TrackList({ tracks, setTracks }: Props) {
       else next.delete(id);
       return next;
     });
+  }
+
+  function setDlStatus(id: string, state: SyncState | null) {
+    setDownloadStatus((prev) => {
+      const next = new Map(prev);
+      if (state) next.set(id, state);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  async function syncAllTracks() {
+    setIsSyncingAll(true);
+    for (const track of sorted) {
+      setDlStatus(track.id, { status: 'syncing' });
+      try {
+        await getBlob(track.id, track.mimeType);
+        setDlStatus(track.id, null);
+        setRefreshKeys((prev) => new Map(prev).set(track.id, (prev.get(track.id) ?? 0) + 1));
+      } catch (err) {
+        const message = (err as { code?: string; message?: string })?.code || (err as Error)?.message || String(err);
+        setDlStatus(track.id, { status: 'error', message });
+      }
+    }
+    setIsSyncingAll(false);
   }
 
   async function handleFiles(files: FileList | null) {
@@ -142,6 +170,9 @@ export default function TrackList({ tracks, setTracks }: Props) {
         <button className="primary" onClick={() => fileInputRef.current?.click()}>
           + Upload tracks
         </button>
+        <button onClick={syncAllTracks} disabled={isSyncingAll || sorted.length === 0}>
+          {isSyncingAll ? '⬇ Syncing…' : '⬇ Sync tracks'}
+        </button>
       </div>
 
       {sorted.length === 0 && (
@@ -168,6 +199,17 @@ export default function TrackList({ tracks, setTracks }: Props) {
               {syncStatus.get(track.id)?.status === 'error' && (
                 <span className="sync-badge error" title="Cloud upload failed - this track won't be available on other devices yet">
                   ⚠ {(syncStatus.get(track.id) as { status: 'error'; message: string }).message}
+                </span>
+              )}
+
+              {downloadStatus.get(track.id)?.status === 'syncing' && (
+                <span className="sync-badge" title="Downloading from cloud">
+                  ⬇ syncing…
+                </span>
+              )}
+              {downloadStatus.get(track.id)?.status === 'error' && (
+                <span className="sync-badge error" title="Cloud download failed">
+                  ⚠ {(downloadStatus.get(track.id) as { status: 'error'; message: string }).message}
                 </span>
               )}
 
@@ -205,6 +247,7 @@ export default function TrackList({ tracks, setTracks }: Props) {
             </div>
 
             <TrackPlayer
+              key={refreshKeys.get(track.id) ?? 0}
               ref={(el) => {
                 if (el) playerRefs.current.set(track.id, el);
                 else playerRefs.current.delete(track.id);
