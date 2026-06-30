@@ -102,18 +102,29 @@ async function putLocalBlob(id: string, blob: Blob): Promise<void> {
   idb.close();
 }
 
-export async function saveBlob(id: string, blob: Blob, onSynced?: (ok: boolean) => void): Promise<void> {
+export async function saveBlob(
+  id: string,
+  blob: Blob,
+  onSynced?: (ok: boolean, error?: string) => void,
+): Promise<void> {
   await putLocalBlob(id, blob);
   uploadBlobInBackground(id, blob, onSynced);
 }
 
-function uploadBlobInBackground(id: string, blob: Blob, onSynced?: (ok: boolean) => void): void {
+function uploadBlobInBackground(id: string, blob: Blob, onSynced?: (ok: boolean, error?: string) => void): void {
   authReady
-    .then(() => uploadBytes(ref(storage, `audio/${id}`), blob))
+    .then(() =>
+      Promise.race([
+        uploadBytes(ref(storage, `audio/${id}`), blob),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Upload timed out after 30s - check your network connection')), 30000),
+        ),
+      ]),
+    )
     .then(() => onSynced?.(true))
     .catch((err) => {
       console.error('Storage upload error:', err);
-      onSynced?.(false);
+      onSynced?.(false, err?.code || err?.message || String(err));
     });
 }
 
@@ -150,7 +161,12 @@ export async function resyncLocalBlobs(tracks: Track[]): Promise<void> {
         req.onerror = () => reject(req.error);
       });
       idb.close();
-      if (blob) await uploadBytes(ref(storage, `audio/${track.id}`), blob);
+      if (blob) {
+        await Promise.race([
+          uploadBytes(ref(storage, `audio/${track.id}`), blob),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Resync upload timed out after 30s')), 30000)),
+        ]);
+      }
     } catch (err) {
       console.error('Resync upload error:', track.id, err);
     }
