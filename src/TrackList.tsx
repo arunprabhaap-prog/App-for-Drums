@@ -8,6 +8,18 @@ interface Props {
   setTracks: Dispatch<SetStateAction<Track[]>>;
 }
 
+// A tiny, instantly-playable silent clip. Playing it synchronously inside a
+// tap handler "unlocks" iOS Safari's media session, so later async play()
+// calls (after the real audio blob has loaded from IndexedDB/Storage) are
+// no longer blocked for lack of a fresh user gesture.
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAAAAA';
+let unlockAudio: HTMLAudioElement | null = null;
+function unlockAudioPlayback() {
+  if (!unlockAudio) unlockAudio = new Audio(SILENT_WAV);
+  unlockAudio.play().catch(() => {});
+}
+
 export default function TrackList({ tracks, setTracks }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -74,13 +86,13 @@ export default function TrackList({ tracks, setTracks }: Props) {
   }
 
   function handlePlayClick(id: string) {
+    unlockAudioPlayback();
     if (!activeIds.has(id)) {
       setActiveIds((prev) => new Set(prev).add(id));
       setPendingAutoPlay(id);
+    } else {
+      playerRefs.current.get(id)?.togglePlay();
     }
-    // Call synchronously within the tap handler so iOS Safari treats any
-    // later async play() (once the blob has loaded) as gesture-initiated.
-    playerRefs.current.get(id)?.togglePlay();
   }
 
   function startReplaceTrack(id: string) {

@@ -67,9 +67,6 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
   }, [autoPlay, url, onConsumeAutoPlay]);
 
   function togglePlay() {
-    // Calling play() synchronously inside the tap handler (even before the
-    // audio has a src loaded) "unlocks" this element for iOS Safari, so the
-    // real play() call once the blob has loaded asynchronously is allowed.
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) audio.play().catch(() => {});
