@@ -95,7 +95,12 @@ async function putLocalBlob(id: string, blob: Blob): Promise<void> {
 
 export async function saveBlob(id: string, blob: Blob): Promise<void> {
   await putLocalBlob(id, blob);
-  authReady.then(() => uploadBytes(ref(storage, `audio/${id}`), blob)).catch(() => {});
+  try {
+    await authReady;
+    await uploadBytes(ref(storage, `audio/${id}`), blob);
+  } catch (err) {
+    console.error('Storage upload error:', err);
+  }
 }
 
 export async function getBlob(id: string, mimeType?: string): Promise<Blob | undefined> {
@@ -120,6 +125,28 @@ export async function getBlob(id: string, mimeType?: string): Promise<Blob | und
   }
 }
 
+// One-time repair pass: re-upload any locally-cached blob whose cloud
+// upload may have failed/been interrupted previously (fire-and-forget
+// uploads before this was fixed to be awaited).
+export async function resyncLocalBlobs(tracks: Track[]): Promise<void> {
+  await authReady;
+  for (const track of tracks) {
+    try {
+      const idb = await openDb();
+      const blob = await new Promise<Blob | undefined>((resolve, reject) => {
+        const tx = idb.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(track.id);
+        req.onsuccess = () => resolve(req.result as Blob | undefined);
+        req.onerror = () => reject(req.error);
+      });
+      idb.close();
+      if (blob) await uploadBytes(ref(storage, `audio/${track.id}`), blob);
+    } catch (err) {
+      console.error('Resync upload error:', track.id, err);
+    }
+  }
+}
+
 export async function deleteBlob(id: string): Promise<void> {
   const idb = await openDb();
   await new Promise<void>((resolve, reject) => {
@@ -129,5 +156,10 @@ export async function deleteBlob(id: string): Promise<void> {
     tx.onerror = () => reject(tx.error);
   });
   idb.close();
-  authReady.then(() => deleteObject(ref(storage, `audio/${id}`))).catch(() => {});
+  try {
+    await authReady;
+    await deleteObject(ref(storage, `audio/${id}`));
+  } catch (err) {
+    console.error('Storage delete error:', err);
+  }
 }
