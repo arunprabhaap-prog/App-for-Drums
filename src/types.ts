@@ -22,4 +22,7 @@ export interface Track {
   markers: Marker[];
   mimeType?: string;
   drumBlocks?: DrumBlock[];
+  bpm?: number;
+  beatsPerBar?: number;
+  gridOffset?: number;
 }

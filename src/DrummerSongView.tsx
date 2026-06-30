@@ -4,6 +4,7 @@ import { getBlob, newId } from './storage';
 import BlockEditor, { BLOCK_COLORS } from './BlockEditor';
 
 const PX_PER_SEC = 80;
+const DEFAULT_BEATS_PER_BAR = 4;
 
 interface Props {
   track: Track;
@@ -18,15 +19,21 @@ function formatTime(t: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
 export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const timelineRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [peaks, setPeaks] = useState<number[] | null>(null);
   const [duration, setDuration] = useState(track.duration);
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
   const [dragRange, setDragRange] = useState<{ start: number; end: number } | null>(null);
   const dragStartRef = useRef<number | null>(null);
   const [editing, setEditing] = useState<
@@ -34,6 +41,14 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
     | { mode: 'edit'; block: DrumBlock }
     | null
   >(null);
+
+  const bpm = track.bpm ?? null;
+  const beatsPerBar = track.beatsPerBar ?? DEFAULT_BEATS_PER_BAR;
+  const gridOffset = track.gridOffset ?? 0;
+  const [bpmDraft, setBpmDraft] = useState(bpm ? String(bpm) : '');
+  const [beatsDraft, setBeatsDraft] = useState(String(beatsPerBar));
+  const tapTimesRef = useRef<number[]>([]);
+  const [tapCount, setTapCount] = useState(0);
 
   const width = Math.max(1, Math.round(duration * PX_PER_SEC));
   const blocks = track.drumBlocks ?? [];
@@ -110,11 +125,52 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
     }
   }, [peaks, width]);
 
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.muted = muted;
+  }, [muted]);
+
+  // Track the scroller's width so the playhead can be pinned at its
+  // horizontal center while the waveform/drum track scroll underneath it.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setContainerWidth(el.clientWidth));
+    observer.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+
+  // Keeps the playhead fixed at the horizontal center of the viewport while
+  // playback progresses, by sliding the track content underneath it instead
+  // - clamped so the content doesn't scroll past its own start/end edges.
+  const trackOffset = clamp(containerWidth / 2 - currentTime * PX_PER_SEC, Math.min(0, containerWidth - width), 0);
+
+  const beatInterval = bpm ? 60 / bpm : null;
+  const barInterval = beatInterval ? beatInterval * beatsPerBar : null;
+  const gridLines: { time: number; isBar: boolean }[] = [];
+  if (beatInterval && barInterval) {
+    const firstBeatIndex = Math.ceil((0 - gridOffset) / beatInterval);
+    for (let n = firstBeatIndex; ; n++) {
+      const t = gridOffset + n * beatInterval;
+      if (t > duration) break;
+      if (t < 0) continue;
+      const barsFromOffset = Math.round((t - gridOffset) / barInterval);
+      const isBar = Math.abs(t - (gridOffset + barsFromOffset * barInterval)) < 0.01;
+      gridLines.push({ time: t, isBar });
+    }
+  }
+
   function pixelToTime(clientX: number): number {
-    if (!timelineRef.current) return 0;
-    const rect = timelineRef.current.getBoundingClientRect();
-    const x = clientX - rect.left + timelineRef.current.scrollLeft;
-    return Math.min(duration, Math.max(0, x / PX_PER_SEC));
+    if (!scrollRef.current) return 0;
+    const rect = scrollRef.current.getBoundingClientRect();
+    const x = clientX - rect.left - trackOffset;
+    return clamp(x / PX_PER_SEC, 0, duration);
+  }
+
+  function snapToBeat(time: number): number {
+    if (!beatInterval) return time;
+    const n = Math.round((time - gridOffset) / beatInterval);
+    return clamp(gridOffset + n * beatInterval, 0, duration);
   }
 
   function seek(time: number) {
@@ -136,14 +192,14 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   }
 
   function handleTrackMouseDown(e: React.MouseEvent) {
-    const t = pixelToTime(e.clientX);
+    const t = snapToBeat(pixelToTime(e.clientX));
     dragStartRef.current = t;
     setDragRange({ start: t, end: t });
   }
 
   function handleTrackMouseMove(e: React.MouseEvent) {
     if (dragStartRef.current === null) return;
-    setDragRange({ start: dragStartRef.current, end: pixelToTime(e.clientX) });
+    setDragRange({ start: dragStartRef.current, end: snapToBeat(pixelToTime(e.clientX)) });
   }
 
   function handleTrackMouseUp() {
@@ -170,6 +226,48 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   function deleteBlock(id: string) {
     onUpdate({ ...track, drumBlocks: blocks.filter((b) => b.id !== id) });
     setEditing(null);
+  }
+
+  function applyManualTempo() {
+    const parsedBpm = parseFloat(bpmDraft);
+    const parsedBeats = parseInt(beatsDraft, 10);
+    if (!isFinite(parsedBpm) || parsedBpm <= 0) return;
+    onUpdate({
+      ...track,
+      bpm: parsedBpm,
+      beatsPerBar: isFinite(parsedBeats) && parsedBeats > 0 ? parsedBeats : DEFAULT_BEATS_PER_BAR,
+      gridOffset: track.gridOffset ?? 0,
+    });
+  }
+
+  function handleTap() {
+    const now = performance.now();
+    const audioTime = audioRef.current?.currentTime ?? currentTime;
+    tapTimesRef.current = [...tapTimesRef.current, now].slice(-8);
+    setTapCount(tapTimesRef.current.length);
+    const taps = tapTimesRef.current;
+    if (taps.length < 2) return;
+    const intervals = taps.slice(1).map((t, i) => t - taps[i]);
+    const avgMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const detectedBpm = Math.round((60000 / avgMs) * 10) / 10;
+    setBpmDraft(String(detectedBpm));
+    onUpdate({
+      ...track,
+      bpm: detectedBpm,
+      beatsPerBar: track.beatsPerBar ?? DEFAULT_BEATS_PER_BAR,
+      gridOffset: audioTime,
+    });
+  }
+
+  function resetTaps() {
+    tapTimesRef.current = [];
+    setTapCount(0);
+  }
+
+  function clearTempo() {
+    resetTaps();
+    setBpmDraft('');
+    onUpdate({ ...track, bpm: undefined, beatsPerBar: undefined, gridOffset: undefined });
   }
 
   return (
@@ -204,16 +302,66 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
             </svg>
           )}
         </button>
+        <button
+          className={`mute-btn ${muted ? 'active' : ''}`}
+          onClick={() => setMuted((m) => !m)}
+          aria-label={muted ? 'Unmute' : 'Mute'}
+          title={muted ? 'Unmute' : 'Mute'}
+        >
+          {muted ? (
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.42.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+            </svg>
+          )}
+        </button>
         <span className="time-display">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
       </div>
 
-      <p className="hint">Click the waveform to scrub. Drag on the arrangement track below to add a block.</p>
+      <div className="tempo-panel">
+        <span className="tempo-label">Tempo</span>
+        <input
+          className="tempo-input"
+          type="number"
+          min={1}
+          placeholder="BPM"
+          value={bpmDraft}
+          onChange={(e) => setBpmDraft(e.target.value)}
+          onBlur={applyManualTempo}
+          onKeyDown={(e) => e.key === 'Enter' && applyManualTempo()}
+        />
+        <span className="tempo-x">×</span>
+        <input
+          className="tempo-input beats"
+          type="number"
+          min={1}
+          value={beatsDraft}
+          onChange={(e) => setBeatsDraft(e.target.value)}
+          onBlur={applyManualTempo}
+          onKeyDown={(e) => e.key === 'Enter' && applyManualTempo()}
+        />
+        <span className="tempo-x">beats/bar</span>
+        <button onClick={handleTap}>Tap tempo{tapCount > 0 ? ` (${tapCount})` : ''}</button>
+        {bpm && (
+          <button onClick={clearTempo} className="danger">
+            Clear grid
+          </button>
+        )}
+      </div>
 
-      <div className="drummer-scroll">
-        <div className="drummer-tracks" style={{ width }}>
-          {/* Flags overlay, positioned above the waveform */}
+      <p className="hint">
+        Click the waveform to scrub. Drag on the drum track below to add a segment
+        {bpm ? ' - it snaps to the beat grid.' : '.'}
+      </p>
+
+      <div className="drummer-scroll" ref={scrollRef}>
+        <div className="playhead" />
+        <div className="drummer-tracks" style={{ width, transform: `translateX(${trackOffset}px)` }}>
           <div className="flags-overlay" style={{ width }}>
             {track.markers.map((m) => (
               <button
@@ -228,17 +376,21 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
             ))}
           </div>
 
-          {/* Waveform */}
-          <div className="waveform-row" ref={timelineRef} onClick={handleWaveformClick} style={{ width }}>
+          <div className="waveform-row" onClick={handleWaveformClick} style={{ width }}>
             {!peaks && <div className="waveform-loading">Loading waveform…</div>}
             <canvas ref={canvasRef} />
-            <div className="playhead" style={{ left: currentTime * PX_PER_SEC }} />
             {track.markers.map((m) => (
               <div key={m.id} className="flag-line" style={{ left: m.time * PX_PER_SEC, background: m.color }} />
             ))}
+            {gridLines.map((g) => (
+              <div
+                key={g.time}
+                className={`grid-line ${g.isBar ? 'bar' : 'beat'}`}
+                style={{ left: g.time * PX_PER_SEC }}
+              />
+            ))}
           </div>
 
-          {/* Drum arrangement track */}
           <div
             className="track-row drum-track"
             style={{ width }}
@@ -250,6 +402,13 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
               setDragRange(null);
             }}
           >
+            {gridLines.map((g) => (
+              <div
+                key={g.time}
+                className={`grid-line ${g.isBar ? 'bar' : 'beat'}`}
+                style={{ left: g.time * PX_PER_SEC }}
+              />
+            ))}
             {dragRange && (
               <div
                 className="drum-block selecting"
