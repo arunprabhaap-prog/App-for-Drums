@@ -77,9 +77,10 @@ export default function TrackList({ tracks, setTracks }: Props) {
     if (!activeIds.has(id)) {
       setActiveIds((prev) => new Set(prev).add(id));
       setPendingAutoPlay(id);
-    } else {
-      playerRefs.current.get(id)?.togglePlay();
     }
+    // Call synchronously within the tap handler so iOS Safari treats any
+    // later async play() (once the blob has loaded) as gesture-initiated.
+    playerRefs.current.get(id)?.togglePlay();
   }
 
   function startReplaceTrack(id: string) {
@@ -177,24 +178,23 @@ export default function TrackList({ tracks, setTracks }: Props) {
               </div>
             </div>
 
-            {(activeIds.has(track.id) || expandedId === track.id) && (
-              <TrackPlayer
-                ref={(el) => {
-                  if (el) playerRefs.current.set(track.id, el);
-                  else playerRefs.current.delete(track.id);
-                }}
-                track={track}
-                compact={expandedId !== track.id}
-                autoPlay={pendingAutoPlay === track.id}
-                onConsumeAutoPlay={() => setPendingAutoPlay(null)}
-                onPlayingChange={(playing) =>
-                  setPlayingId((prev) => (playing ? track.id : prev === track.id ? null : prev))
-                }
-                onUpdate={(updated) =>
-                  setTracks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
-                }
-              />
-            )}
+            <TrackPlayer
+              ref={(el) => {
+                if (el) playerRefs.current.set(track.id, el);
+                else playerRefs.current.delete(track.id);
+              }}
+              track={track}
+              compact={expandedId !== track.id}
+              active={activeIds.has(track.id) || expandedId === track.id}
+              autoPlay={pendingAutoPlay === track.id}
+              onConsumeAutoPlay={() => setPendingAutoPlay(null)}
+              onPlayingChange={(playing) =>
+                setPlayingId((prev) => (playing ? track.id : prev === track.id ? null : prev))
+              }
+              onUpdate={(updated) =>
+                setTracks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+              }
+            />
           </li>
         ))}
       </ul>

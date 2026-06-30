@@ -14,6 +14,7 @@ export interface TrackPlayerHandle {
 interface Props {
   track: Track;
   compact: boolean;
+  active: boolean;
   autoPlay: boolean;
   onConsumeAutoPlay: () => void;
   onPlayingChange: (playing: boolean) => void;
@@ -28,7 +29,7 @@ function formatTime(t: number): string {
 }
 
 const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
-  { track, compact, autoPlay, onConsumeAutoPlay, onPlayingChange, onUpdate },
+  { track, compact, active, autoPlay, onConsumeAutoPlay, onPlayingChange, onUpdate },
   ref,
 ) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -41,6 +42,7 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
   const [labelDraft, setLabelDraft] = useState('');
 
   useEffect(() => {
+    if (!active) return;
     let objectUrl: string | null = null;
     let cancelled = false;
     setUrl(null);
@@ -55,7 +57,7 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [track.id, track.duration]);
+  }, [track.id, track.duration, active]);
 
   useEffect(() => {
     if (autoPlay && audioRef.current && url) {
@@ -65,6 +67,9 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
   }, [autoPlay, url, onConsumeAutoPlay]);
 
   function togglePlay() {
+    // Calling play() synchronously inside the tap handler (even before the
+    // audio has a src loaded) "unlocks" this element for iOS Safari, so the
+    // real play() call once the blob has loaded asynchronously is allowed.
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) audio.play().catch(() => {});
@@ -113,10 +118,10 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
     onUpdate({ ...track, markers: track.markers.map((m) => (m.id === id ? { ...m, label } : m)) });
   }
 
-  const audio = url && (
+  const audio = (
     <audio
       ref={audioRef}
-      src={url}
+      src={url || undefined}
       onLoadedMetadata={(e) => {
         const d = e.currentTarget.duration;
         setDuration(d);
@@ -138,7 +143,7 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
     />
   );
 
-  if (compact) return audio || null;
+  if (compact) return audio;
 
   return (
     <div className="track-player">

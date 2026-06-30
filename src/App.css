@@ -190,7 +190,7 @@ input {
 .timeline-flag {
   position: absolute;
   top: -4px;
-  width: 3px;
+  width: 12px;
   height: 56px;
   padding: 0;
   border: none;
