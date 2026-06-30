@@ -121,7 +121,7 @@ export default function TrackList({ tracks, setTracks }: Props) {
         <input
           ref={fileInputRef}
           type="file"
-          accept="audio/*"
+          accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.flac,audio/x-m4a,audio/mp4"
           multiple
           hidden
           onChange={(e) => {
@@ -132,7 +132,7 @@ export default function TrackList({ tracks, setTracks }: Props) {
         <input
           ref={replaceInputRef}
           type="file"
-          accept="audio/*"
+          accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.flac,audio/x-m4a,audio/mp4"
           hidden
           onChange={(e) => {
             handleReplaceFile(e.target.files);
