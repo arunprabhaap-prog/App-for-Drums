@@ -1,4 +1,4 @@
-import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { Track } from './types';
 import { deleteBlob, newId, saveBlob } from './storage';
 import TrackPlayer, { type TrackPlayerHandle } from './TrackPlayer';
@@ -15,8 +15,29 @@ export default function TrackList({ tracks, setTracks }: Props) {
   const playerRefs = useRef<Map<string, TrackPlayerHandle>>(new Map());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<Map<string, 'syncing' | 'error'>>(new Map());
+
+  useEffect(() => {
+    const hasSyncing = [...syncStatus.values()].some((s) => s === 'syncing');
+    if (!hasSyncing) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [syncStatus]);
 
   const sorted = [...tracks].sort((a, b) => a.order - b.order);
+
+  function setStatus(id: string, status: 'syncing' | 'error' | null) {
+    setSyncStatus((prev) => {
+      const next = new Map(prev);
+      if (status) next.set(id, status);
+      else next.delete(id);
+      return next;
+    });
+  }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -25,7 +46,8 @@ export default function TrackList({ tracks, setTracks }: Props) {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const id = newId();
-      await saveBlob(id, file);
+      setStatus(id, 'syncing');
+      await saveBlob(id, file, (ok) => setStatus(id, ok ? null : 'error'));
       newTracks.push({
         id,
         title: file.name.replace(/\.[^/.]+$/, ''),
@@ -79,7 +101,8 @@ export default function TrackList({ tracks, setTracks }: Props) {
     const id = replaceIdRef.current;
     if (!files || files.length === 0 || !id) return;
     const file = files[0];
-    await saveBlob(id, file);
+    setStatus(id, 'syncing');
+    await saveBlob(id, file, (ok) => setStatus(id, ok ? null : 'error'));
     setTracks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, markers: [], duration: 0, mimeType: file.type || undefined } : t)),
     );
@@ -131,6 +154,17 @@ export default function TrackList({ tracks, setTracks }: Props) {
               >
                 {playingId === track.id ? '⏸' : '▶'}
               </button>
+
+              {syncStatus.get(track.id) === 'syncing' && (
+                <span className="sync-badge" title="Uploading to cloud - keep this open until it finishes">
+                  ☁ syncing…
+                </span>
+              )}
+              {syncStatus.get(track.id) === 'error' && (
+                <span className="sync-badge error" title="Cloud upload failed - this track won't be available on other devices yet">
+                  ⚠ upload failed
+                </span>
+              )}
 
               <input
                 className="track-title"
