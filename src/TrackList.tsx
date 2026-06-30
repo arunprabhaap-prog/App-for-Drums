@@ -8,26 +8,12 @@ interface Props {
   setTracks: Dispatch<SetStateAction<Track[]>>;
 }
 
-// A tiny, instantly-playable silent clip. Playing it synchronously inside a
-// tap handler "unlocks" iOS Safari's media session, so later async play()
-// calls (after the real audio blob has loaded from IndexedDB/Storage) are
-// no longer blocked for lack of a fresh user gesture.
-const SILENT_WAV =
-  'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAAAAA';
-let unlockAudio: HTMLAudioElement | null = null;
-function unlockAudioPlayback() {
-  if (!unlockAudio) unlockAudio = new Audio(SILENT_WAV);
-  unlockAudio.play().catch(() => {});
-}
-
 export default function TrackList({ tracks, setTracks }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const replaceIdRef = useRef<string | null>(null);
   const playerRefs = useRef<Map<string, TrackPlayerHandle>>(new Map());
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
-  const [pendingAutoPlay, setPendingAutoPlay] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
 
   const sorted = [...tracks].sort((a, b) => a.order - b.order);
@@ -73,11 +59,6 @@ export default function TrackList({ tracks, setTracks }: Props) {
     setTracks((prev) => prev.filter((t) => t.id !== id));
     if (expandedId === id) setExpandedId(null);
     if (playingId === id) setPlayingId(null);
-    setActiveIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
     playerRefs.current.delete(id);
   }
 
@@ -86,13 +67,7 @@ export default function TrackList({ tracks, setTracks }: Props) {
   }
 
   function handlePlayClick(id: string) {
-    unlockAudioPlayback();
-    if (!activeIds.has(id)) {
-      setActiveIds((prev) => new Set(prev).add(id));
-      setPendingAutoPlay(id);
-    } else {
-      playerRefs.current.get(id)?.togglePlay();
-    }
+    playerRefs.current.get(id)?.togglePlay();
   }
 
   function startReplaceTrack(id: string) {
@@ -197,9 +172,6 @@ export default function TrackList({ tracks, setTracks }: Props) {
               }}
               track={track}
               compact={expandedId !== track.id}
-              active={activeIds.has(track.id) || expandedId === track.id}
-              autoPlay={pendingAutoPlay === track.id}
-              onConsumeAutoPlay={() => setPendingAutoPlay(null)}
               onPlayingChange={(playing) =>
                 setPlayingId((prev) => (playing ? track.id : prev === track.id ? null : prev))
               }

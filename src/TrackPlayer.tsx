@@ -14,9 +14,6 @@ export interface TrackPlayerHandle {
 interface Props {
   track: Track;
   compact: boolean;
-  active: boolean;
-  autoPlay: boolean;
-  onConsumeAutoPlay: () => void;
   onPlayingChange: (playing: boolean) => void;
   onUpdate: (track: Track) => void;
 }
@@ -29,7 +26,7 @@ function formatTime(t: number): string {
 }
 
 const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
-  { track, compact, active, autoPlay, onConsumeAutoPlay, onPlayingChange, onUpdate },
+  { track, compact, onPlayingChange, onUpdate },
   ref,
 ) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -41,8 +38,11 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
   const [pending, setPending] = useState<{ time: number } | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
 
+  // Preload the audio source as soon as the track mounts (rather than
+  // waiting for a play tap) so that togglePlay() can call audio.play()
+  // synchronously within the user gesture - iOS Safari silently drops
+  // play() calls that aren't tied directly to a tap.
   useEffect(() => {
-    if (!active) return;
     let objectUrl: string | null = null;
     let cancelled = false;
     setUrl(null);
@@ -57,14 +57,7 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [track.id, track.duration, active]);
-
-  useEffect(() => {
-    if (autoPlay && audioRef.current && url) {
-      audioRef.current.play().catch(() => {});
-      onConsumeAutoPlay();
-    }
-  }, [autoPlay, url, onConsumeAutoPlay]);
+  }, [track.id, track.duration]);
 
   function togglePlay() {
     const audio = audioRef.current;
