@@ -163,9 +163,12 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   }, []);
 
   // Keeps the playhead fixed at the horizontal center of the viewport while
-  // playback progresses, by sliding the track content underneath it instead
-  // - clamped so the content doesn't scroll past its own start/end edges.
-  const trackOffset = clamp(containerWidth / 2 - currentTime * pxPerSec, Math.min(0, containerWidth - width), 0);
+  // playback progresses, by sliding the track content underneath it instead.
+  // Deliberately unclamped: the track's very start sits at the center at
+  // time 0, and its very end reaches the center at the final timestamp, so
+  // there's empty space on either side rather than the waveform being
+  // pinned flush against the left/right edges of the viewer.
+  const trackOffset = containerWidth / 2 - currentTime * pxPerSec;
 
   const beatInterval = bpm ? 60 / bpm : null;
   const barInterval = beatInterval ? beatInterval * beatsPerBar : null;
