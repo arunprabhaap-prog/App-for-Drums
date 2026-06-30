@@ -98,7 +98,7 @@ export async function saveBlob(id: string, blob: Blob): Promise<void> {
   authReady.then(() => uploadBytes(ref(storage, `audio/${id}`), blob)).catch(() => {});
 }
 
-export async function getBlob(id: string): Promise<Blob | undefined> {
+export async function getBlob(id: string, mimeType?: string): Promise<Blob | undefined> {
   const idb = await openDb();
   const local = await new Promise<Blob | undefined>((resolve, reject) => {
     const tx = idb.transaction(STORE_NAME, 'readonly');
@@ -107,12 +107,12 @@ export async function getBlob(id: string): Promise<Blob | undefined> {
     req.onerror = () => reject(req.error);
   });
   idb.close();
-  if (local) return local;
+  if (local) return local.type ? local : new Blob([local], { type: mimeType || 'audio/mpeg' });
 
   try {
     await authReady;
     const bytes = await getBytes(ref(storage, `audio/${id}`));
-    const blob = new Blob([bytes]);
+    const blob = new Blob([bytes], { type: mimeType || 'audio/mpeg' });
     await putLocalBlob(id, blob);
     return blob;
   } catch {

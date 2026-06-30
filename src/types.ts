@@ -11,4 +11,5 @@ export interface Track {
   order: number;
   duration: number;
   markers: Marker[];
+  mimeType?: string;
 }

@@ -31,6 +31,7 @@ export default function TrackList({ tracks, setTracks }: Props) {
         order: startOrder + i,
         duration: 0,
         markers: [],
+        mimeType: file.type || undefined,
       });
     }
     setTracks((prev) => [...prev, ...newTracks]);
@@ -71,8 +72,11 @@ export default function TrackList({ tracks, setTracks }: Props) {
   async function handleReplaceFile(files: FileList | null) {
     const id = replaceIdRef.current;
     if (!files || files.length === 0 || !id) return;
-    await saveBlob(id, files[0]);
-    setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, markers: [], duration: 0 } : t)));
+    const file = files[0];
+    await saveBlob(id, file);
+    setTracks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, markers: [], duration: 0, mimeType: file.type || undefined } : t)),
+    );
   }
 
   return (

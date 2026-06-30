@@ -37,7 +37,7 @@ export default function TrackPlayer({ track, autoPlay, onConsumeAutoPlay, onUpda
     setUrl(null);
     setCurrentTime(0);
     setDuration(track.duration);
-    getBlob(track.id).then((blob) => {
+    getBlob(track.id, track.mimeType).then((blob) => {
       if (cancelled || !blob) return;
       objectUrl = URL.createObjectURL(blob);
       setUrl(objectUrl);
