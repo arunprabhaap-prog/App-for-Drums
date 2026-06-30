@@ -124,15 +124,11 @@ export async function getBlob(id: string, mimeType?: string): Promise<Blob | und
   idb.close();
   if (local) return local.type ? local : new Blob([local], { type: mimeType || 'audio/mpeg' });
 
-  try {
-    await authReady;
-    const bytes = await getBytes(ref(storage, `audio/${id}`));
-    const blob = new Blob([bytes], { type: mimeType || 'audio/mpeg' });
-    await putLocalBlob(id, blob);
-    return blob;
-  } catch {
-    return undefined;
-  }
+  await authReady;
+  const bytes = await getBytes(ref(storage, `audio/${id}`));
+  const blob = new Blob([bytes], { type: mimeType || 'audio/mpeg' });
+  await putLocalBlob(id, blob);
+  return blob;
 }
 
 // One-time repair pass: re-upload any locally-cached blob whose cloud

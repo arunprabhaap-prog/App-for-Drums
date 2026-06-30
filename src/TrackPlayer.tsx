@@ -37,6 +37,7 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
   const [isPlaying, setIsPlaying] = useState(false);
   const [pending, setPending] = useState<{ time: number } | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Preload the audio source as soon as the track mounts (rather than
   // waiting for a play tap) so that togglePlay() can call audio.play()
@@ -46,13 +47,20 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
     let objectUrl: string | null = null;
     let cancelled = false;
     setUrl(null);
+    setLoadError(null);
     setCurrentTime(0);
     setDuration(track.duration);
-    getBlob(track.id, track.mimeType).then((blob) => {
-      if (cancelled || !blob) return;
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
-    });
+    getBlob(track.id, track.mimeType)
+      .then((blob) => {
+        if (cancelled || !blob) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Failed to load audio:', track.id, err);
+        setLoadError(err?.code || err?.message || String(err));
+      });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -61,7 +69,7 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
 
   function togglePlay() {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !url) return;
     if (audio.paused) audio.play().catch(() => {});
     else audio.pause();
   }
@@ -133,11 +141,21 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
     />
   );
 
-  if (compact) return audio;
+  const errorNotice = loadError ? <p className="load-error">⚠ Couldn't load audio: {loadError}</p> : null;
+
+  if (compact) {
+    return (
+      <>
+        {audio}
+        {errorNotice}
+      </>
+    );
+  }
 
   return (
     <div className="track-player">
       {audio}
+      {errorNotice}
 
       <div className="player-controls">
         <button className="big-play-btn" onClick={togglePlay}>

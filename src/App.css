@@ -168,6 +168,12 @@ input {
   color: var(--text);
 }
 
+.load-error {
+  font-size: 13px;
+  margin: 4px 0;
+  color: #ef4444;
+}
+
 .timeline {
   position: relative;
   height: 48px;
