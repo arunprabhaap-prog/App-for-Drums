@@ -49,6 +49,8 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
     | { mode: 'edit'; block: DrumBlock }
     | null
   >(null);
+  const [undoStack, setUndoStack] = useState<DrumBlock[][]>([]);
+  const [redoStack, setRedoStack] = useState<DrumBlock[][]>([]);
 
   const bpm = track.bpm ?? null;
   const beatsPerBar = track.beatsPerBar ?? DEFAULT_BEATS_PER_BAR;
@@ -65,6 +67,35 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
   const upcomingBlocks = sortedBlocks.filter((b) => b.endTime > currentTime && b.id !== currentBlock?.id);
   const nextBlock = upcomingBlocks[0] ?? null;
   const laterBlocks = upcomingBlocks.slice(1);
+
+  // Reset undo/redo history whenever the user switches to a different
+  // track/song, since this component instance is reused across tracks.
+  useEffect(() => {
+    setUndoStack([]);
+    setRedoStack([]);
+  }, [track.id]);
+
+  function commitBlocks(nextBlocks: DrumBlock[]) {
+    setUndoStack((prev) => [...prev, blocks]);
+    setRedoStack([]);
+    onUpdate({ ...track, drumBlocks: nextBlocks });
+  }
+
+  function undo() {
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    setUndoStack((s) => s.slice(0, -1));
+    setRedoStack((s) => [...s, blocks]);
+    onUpdate({ ...track, drumBlocks: prev });
+  }
+
+  function redo() {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack((s) => s.slice(0, -1));
+    setUndoStack((s) => [...s, blocks]);
+    onUpdate({ ...track, drumBlocks: next });
+  }
 
   function zoomIn() {
     setPxPerSec((z) => clamp(Math.round(z * 1.4), MIN_PX_PER_SEC, MAX_PX_PER_SEC));
@@ -265,7 +296,7 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
           const nextBlocks = blocks.map((b) =>
             b.id === preview.id ? { ...b, startTime: preview.startTime, endTime: preview.endTime } : b
           );
-          onUpdate({ ...track, drumBlocks: nextBlocks });
+          commitBlocks(nextBlocks);
         }
         return null;
       });
@@ -309,12 +340,12 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
     } else {
       nextBlocks = [...blocks, { ...data, id: newId() }];
     }
-    onUpdate({ ...track, drumBlocks: nextBlocks });
+    commitBlocks(nextBlocks);
     setEditing(null);
   }
 
   function deleteBlock(id: string) {
-    onUpdate({ ...track, drumBlocks: blocks.filter((b) => b.id !== id) });
+    commitBlocks(blocks.filter((b) => b.id !== id));
     setEditing(null);
   }
 
@@ -412,6 +443,12 @@ export default function DrummerSongView({ track, onBack, onUpdate }: Props) {
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
         <div className="zoom-controls">
+          <button onClick={undo} disabled={undoStack.length === 0} aria-label="Undo" title="Undo">
+            ↶
+          </button>
+          <button onClick={redo} disabled={redoStack.length === 0} aria-label="Redo" title="Redo">
+            ↷
+          </button>
           <button onClick={zoomOut} disabled={pxPerSec <= MIN_PX_PER_SEC} aria-label="Zoom out" title="Zoom out">
             −
           </button>
