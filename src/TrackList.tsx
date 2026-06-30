@@ -6,9 +6,10 @@ import TrackPlayer, { type TrackPlayerHandle } from './TrackPlayer';
 interface Props {
   tracks: Track[];
   setTracks: Dispatch<SetStateAction<Track[]>>;
+  onOpenDrummerView: () => void;
 }
 
-export default function TrackList({ tracks, setTracks }: Props) {
+export default function TrackList({ tracks, setTracks, onOpenDrummerView }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const replaceIdRef = useRef<string | null>(null);
@@ -233,6 +234,9 @@ export default function TrackList({ tracks, setTracks }: Props) {
         </button>
         <button onClick={syncAllTracks} disabled={isSyncingAll || tracks.length === 0}>
           {isSyncingAll ? '⬇ Syncing…' : '⬇ Sync tracks'}
+        </button>
+        <button onClick={onOpenDrummerView} disabled={tracks.length === 0}>
+          🥁 Drummer view
         </button>
       </div>
 

@@ -5,6 +5,15 @@ export interface Marker {
   color: string;
 }
 
+export interface DrumBlock {
+  id: string;
+  startTime: number;
+  endTime: number;
+  color: string;
+  label: string;
+  note: string;
+}
+
 export interface Track {
   id: string;
   title: string;
@@ -12,4 +21,5 @@ export interface Track {
   duration: number;
   markers: Marker[];
   mimeType?: string;
+  drumBlocks?: DrumBlock[];
 }
