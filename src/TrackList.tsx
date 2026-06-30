@@ -301,9 +301,14 @@ export default function TrackList({ tracks, setTracks }: Props) {
               }}
               track={track}
               compact={expandedId !== track.id}
-              onPlayingChange={(playing) =>
-                setPlayingId((prev) => (playing ? track.id : prev === track.id ? null : prev))
-              }
+              onPlayingChange={(playing) => {
+                if (playing) {
+                  playerRefs.current.forEach((handle, id) => {
+                    if (id !== track.id) handle.pause();
+                  });
+                }
+                setPlayingId((prev) => (playing ? track.id : prev === track.id ? null : prev));
+              }}
               onUpdate={(updated) =>
                 setTracks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
               }

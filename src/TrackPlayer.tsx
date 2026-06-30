@@ -9,6 +9,7 @@ const MARKER_COLORS = [
 
 export interface TrackPlayerHandle {
   togglePlay: () => void;
+  pause: () => void;
 }
 
 interface Props {
@@ -34,10 +35,10 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
   const [url, setUrl] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(track.duration);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [pending, setPending] = useState<{ time: number } | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const wantsPlayRef = useRef(false);
 
   // Preload the audio source as soon as the track mounts (rather than
   // waiting for a play tap) so that togglePlay() can call audio.play()
@@ -67,18 +68,42 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
     };
   }, [track.id, track.duration]);
 
-  function togglePlay() {
+  function playNow() {
     const audio = audioRef.current;
-    if (!audio || !url) return;
-    if (audio.paused) {
-      audio.play().catch((err) => {
-        console.error('Playback failed:', track.id, err);
-        setLoadError(err?.message || String(err));
-      });
-    } else audio.pause();
+    if (!audio) return;
+    audio.play().catch((err) => {
+      console.error('Playback failed:', track.id, err);
+      setLoadError(err?.message || String(err));
+    });
   }
 
-  useImperativeHandle(ref, () => ({ togglePlay }));
+  function togglePlay() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (!url) {
+      // Blob is still loading (e.g. first tap right after the track became
+      // visible) - remember the request and fire it as soon as the source
+      // is ready instead of silently no-op'ing, which is what made play
+      // sometimes need 2-3 taps before anything happened.
+      wantsPlayRef.current = true;
+      return;
+    }
+    if (audio.paused) playNow();
+    else audio.pause();
+  }
+
+  useEffect(() => {
+    if (url && wantsPlayRef.current) {
+      wantsPlayRef.current = false;
+      playNow();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
+  useImperativeHandle(ref, () => ({
+    togglePlay,
+    pause: () => audioRef.current?.pause(),
+  }));
 
   function seek(time: number, play = true) {
     const audio = audioRef.current;
@@ -130,18 +155,9 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
         if (d !== track.duration) onUpdate({ ...track, duration: d });
       }}
       onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-      onPlay={() => {
-        setIsPlaying(true);
-        onPlayingChange(true);
-      }}
-      onPause={() => {
-        setIsPlaying(false);
-        onPlayingChange(false);
-      }}
-      onEnded={() => {
-        setIsPlaying(false);
-        onPlayingChange(false);
-      }}
+      onPlay={() => onPlayingChange(true)}
+      onPause={() => onPlayingChange(false)}
+      onEnded={() => onPlayingChange(false)}
       onError={(e) => {
         const mediaError = e.currentTarget.error;
         console.error('Audio element error:', track.id, mediaError);
@@ -167,9 +183,6 @@ const TrackPlayer = forwardRef<TrackPlayerHandle, Props>(function TrackPlayer(
       {errorNotice}
 
       <div className="player-controls">
-        <button className="big-play-btn" onClick={togglePlay}>
-          {isPlaying ? '⏸' : '▶'}
-        </button>
         <span className="time-display">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
