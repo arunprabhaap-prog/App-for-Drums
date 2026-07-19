@@ -22,15 +22,16 @@ export default function HomePage({ setLists, tracks, onOpen, onCreateSetList, on
   const [deleteTarget, setDeleteTarget] = useState<SetList | null>(null);
   const [deletePasscode, setDeletePasscode] = useState('');
   const [deletePasscodeError, setDeletePasscodeError] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const sorted = [...setLists].sort((a, b) => a.order - b.order);
 
-  // Close the menu when clicking outside it
+  // Close the open menu when clicking outside it
   useEffect(() => {
     if (!menuOpenId) return;
     function onPointerDown(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const el = menuRefs.current.get(menuOpenId!);
+      if (el && !el.contains(e.target as Node)) {
         setMenuOpenId(null);
       }
     }
@@ -124,7 +125,10 @@ export default function HomePage({ setLists, tracks, onOpen, onCreateSetList, on
                 <span className="setlist-name">{sl.name}</span>
                 <span className="setlist-meta">{count} track{count === 1 ? '' : 's'}</span>
               </button>
-              <div className="setlist-menu-wrap" ref={isMenuOpen ? menuRef : undefined}>
+              <div
+                className="setlist-menu-wrap"
+                ref={(el) => { if (el) menuRefs.current.set(sl.id, el); else menuRefs.current.delete(sl.id); }}
+              >
                 <button
                   className="setlist-menu-btn"
                   aria-label="More options"

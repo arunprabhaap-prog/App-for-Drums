@@ -299,9 +299,9 @@ input {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--code-bg);
-  overflow: hidden;
   display: flex;
   align-items: stretch;
+  position: relative;
 }
 
 .setlist-main {
@@ -312,7 +312,7 @@ input {
   text-align: left;
   padding: 16px 18px;
   border: none;
-  border-radius: 0;
+  border-radius: 12px 0 0 12px;
   background: transparent;
 }
 
@@ -348,7 +348,7 @@ input {
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: 0 12px 12px 0;
   cursor: pointer;
   color: var(--text);
 }
