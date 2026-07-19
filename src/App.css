@@ -300,13 +300,15 @@ input {
   border-radius: 12px;
   background: var(--code-bg);
   overflow: hidden;
+  display: flex;
+  align-items: stretch;
 }
 
 .setlist-main {
+  flex: 1;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 100%;
   text-align: left;
   padding: 16px 18px;
   border: none;
@@ -329,26 +331,74 @@ input {
   color: var(--text);
 }
 
-.setlist-actions {
+.setlist-menu-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
+  padding: 0 4px;
+  border-left: 1px solid var(--border);
 }
 
-.setlist-rename {
-  flex: 1;
-  font-size: 14px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+.setlist-menu-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.setlist-menu-btn:hover {
+  background: rgba(170, 59, 255, 0.08);
+}
+
+.hamburger-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.hamburger-icon span {
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.setlist-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
   background: var(--bg);
-  color: var(--text-h);
-  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 140px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.setlist-rename:focus {
-  outline: 1px solid var(--accent);
+.setlist-dropdown button {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 14px;
+}
+
+.setlist-dropdown button:hover {
+  background: rgba(170, 59, 255, 0.08);
 }
 
 .new-setlist-form {

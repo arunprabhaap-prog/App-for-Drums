@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SetList, Track } from './types';
 import { newId } from './storage';
 
@@ -16,11 +16,27 @@ const DELETE_PASSCODE = '2323';
 export default function HomePage({ setLists, tracks, onOpen, onCreateSetList, onDeleteSetList, onRenameSetList }: Props) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<SetList | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SetList | null>(null);
   const [deletePasscode, setDeletePasscode] = useState('');
   const [deletePasscodeError, setDeletePasscodeError] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const sorted = [...setLists].sort((a, b) => a.order - b.order);
+
+  // Close the menu when clicking outside it
+  useEffect(() => {
+    if (!menuOpenId) return;
+    function onPointerDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpenId(null);
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [menuOpenId]);
 
   function handleCreate() {
     const name = newName.trim();
@@ -31,7 +47,21 @@ export default function HomePage({ setLists, tracks, onOpen, onCreateSetList, on
     setCreating(false);
   }
 
-  function requestDelete(sl: SetList) {
+  function openRename(sl: SetList) {
+    setMenuOpenId(null);
+    setRenameDraft(sl.name);
+    setRenameTarget(sl);
+  }
+
+  function confirmRename() {
+    if (!renameTarget) return;
+    const name = renameDraft.trim();
+    if (name) onRenameSetList(renameTarget.id, name);
+    setRenameTarget(null);
+  }
+
+  function openDelete(sl: SetList) {
+    setMenuOpenId(null);
     setDeletePasscode('');
     setDeletePasscodeError(false);
     setDeleteTarget(sl);
@@ -85,32 +115,69 @@ export default function HomePage({ setLists, tracks, onOpen, onCreateSetList, on
       )}
 
       <ul className="setlist-list">
-        {sorted.map((sl) => (
-          <li key={sl.id} className="setlist-item">
-            <button className="setlist-main" onClick={() => onOpen(sl.id)}>
-              <span className="setlist-name">{sl.name}</span>
-              <span className="setlist-meta">{trackCount(sl.id)} track{trackCount(sl.id) === 1 ? '' : 's'}</span>
-            </button>
-            <div className="setlist-actions">
-              <input
-                className="setlist-rename"
-                value={sl.name}
-                onChange={(e) => onRenameSetList(sl.id, e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                aria-label="Rename set list"
-              />
-              <button
-                className="danger"
-                onClick={() => requestDelete(sl)}
-                aria-label="Delete set list"
-              >
-                ✕
+        {sorted.map((sl) => {
+          const count = trackCount(sl.id);
+          const isMenuOpen = menuOpenId === sl.id;
+          return (
+            <li key={sl.id} className="setlist-item">
+              <button className="setlist-main" onClick={() => onOpen(sl.id)}>
+                <span className="setlist-name">{sl.name}</span>
+                <span className="setlist-meta">{count} track{count === 1 ? '' : 's'}</span>
               </button>
-            </div>
-          </li>
-        ))}
+              <div className="setlist-menu-wrap" ref={isMenuOpen ? menuRef : undefined}>
+                <button
+                  className="setlist-menu-btn"
+                  aria-label="More options"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpenId(isMenuOpen ? null : sl.id);
+                  }}
+                >
+                  <span className="hamburger-icon">
+                    <span /><span /><span />
+                  </span>
+                </button>
+                {isMenuOpen && (
+                  <div className="setlist-dropdown">
+                    <button onClick={() => openRename(sl)}>Rename</button>
+                    <button className="danger" onClick={() => openDelete(sl)}>Delete</button>
+                  </div>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
 
+      {/* Rename modal */}
+      {renameTarget && (
+        <div className="modal-backdrop" onClick={() => setRenameTarget(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Rename set list</h3>
+            <label className="modal-field">
+              Name
+              <input
+                autoFocus
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmRename();
+                  if (e.key === 'Escape') setRenameTarget(null);
+                }}
+              />
+            </label>
+            <div className="modal-actions">
+              <div className="spacer" />
+              <button onClick={() => setRenameTarget(null)}>Cancel</button>
+              <button className="primary" onClick={confirmRename} disabled={!renameDraft.trim()}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete modal */}
       {deleteTarget && (
         <div className="modal-backdrop" onClick={() => setDeleteTarget(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
