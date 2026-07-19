@@ -25,4 +25,11 @@ export interface Track {
   bpm?: number;
   beatsPerBar?: number;
   gridOffset?: number;
+  setListId?: string;
+}
+
+export interface SetList {
+  id: string;
+  name: string;
+  order: number;
 }

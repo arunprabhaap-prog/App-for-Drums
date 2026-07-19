@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
-import type { Track } from './types';
+import type { SetList, Track } from './types';
 import { authReady, db, storage } from './firebase';
 
 const META_KEY = 'drum-tracks-meta';
+const SET_LISTS_KEY = 'drum-setlists-meta';
+const SET_LISTS_COLLECTION = 'setlists';
 const DB_NAME = 'drum-tracks-db';
 const STORE_NAME = 'blobs';
 const TRACKS_COLLECTION = 'tracks';
@@ -82,6 +84,65 @@ export function useTracks(): { tracks: Track[]; setTracks: Dispatch<SetStateActi
   };
 
   return { tracks, setTracks };
+}
+
+function loadCachedSetLists(): SetList[] {
+  try {
+    const raw = localStorage.getItem(SET_LISTS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as SetList[];
+  } catch {
+    return [];
+  }
+}
+
+export function useSetLists(): { setLists: SetList[]; setSetLists: Dispatch<SetStateAction<SetList[]>> } {
+  const [setLists, setSetListsState] = useState<SetList[]>(loadCachedSetLists);
+  const latestRef = useRef(setLists);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    authReady.then(() => {
+      unsubscribe = onSnapshot(
+        collection(db, SET_LISTS_COLLECTION),
+        (snapshot) => {
+          const remote = snapshot.docs.map((d) => d.data() as SetList);
+          latestRef.current = remote;
+          setSetListsState(remote);
+          localStorage.setItem(SET_LISTS_KEY, JSON.stringify(remote));
+        },
+        (err) => console.error('Firestore setlists sync error:', err.code, err.message),
+      );
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  const setSetLists: Dispatch<SetStateAction<SetList[]>> = (value) => {
+    const next = typeof value === 'function' ? (value as (prev: SetList[]) => SetList[])(latestRef.current) : value;
+    const prevIds = new Set(latestRef.current.map((s) => s.id));
+    const nextIds = new Set(next.map((s) => s.id));
+
+    latestRef.current = next;
+    setSetListsState(next);
+    localStorage.setItem(SET_LISTS_KEY, JSON.stringify(next));
+
+    authReady.then(() => {
+      next.forEach((sl) => {
+        setDoc(doc(db, SET_LISTS_COLLECTION, sl.id), sl).catch((err) =>
+          console.error('Firestore setlist write error:', err),
+        );
+      });
+      prevIds.forEach((id) => {
+        if (!nextIds.has(id)) {
+          deleteDoc(doc(db, SET_LISTS_COLLECTION, id)).catch((err) =>
+            console.error('Firestore setlist delete error:', err),
+          );
+        }
+      });
+    });
+  };
+
+  return { setLists, setSetLists };
 }
 
 export function newId(): string {

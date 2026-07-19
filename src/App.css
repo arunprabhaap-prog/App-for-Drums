@@ -284,6 +284,86 @@ input {
   background: var(--code-bg);
 }
 
+/* --- Home / set list page --- */
+
+.setlist-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setlist-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--code-bg);
+  overflow: hidden;
+}
+
+.setlist-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 16px 18px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.setlist-main:hover {
+  background: rgba(170, 59, 255, 0.06);
+}
+
+.setlist-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.setlist-meta {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.setlist-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.setlist-rename {
+  flex: 1;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  padding: 6px 8px;
+}
+
+.setlist-rename:focus {
+  outline: 1px solid var(--accent);
+}
+
+.new-setlist-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.new-setlist-form input {
+  flex: 1 1 200px;
+  font-size: 15px;
+}
+
 /* --- Drummer view --- */
 
 .song-list {

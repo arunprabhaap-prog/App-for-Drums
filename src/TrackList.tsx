@@ -4,14 +4,16 @@ import { deleteBlob, hasLocalBlob, newId, saveBlob, syncBlob } from './storage';
 import TrackPlayer, { type TrackPlayerHandle } from './TrackPlayer';
 
 interface Props {
+  setListName: string;
   tracks: Track[];
   setTracks: Dispatch<SetStateAction<Track[]>>;
+  onBack: () => void;
   onOpenDrummerView: () => void;
 }
 
 const DELETE_PASSCODE = '2323';
 
-export default function TrackList({ tracks, setTracks, onOpenDrummerView }: Props) {
+export default function TrackList({ setListName, tracks, setTracks, onBack, onOpenDrummerView }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const replaceIdRef = useRef<string | null>(null);
@@ -222,7 +224,10 @@ export default function TrackList({ tracks, setTracks, onOpenDrummerView }: Prop
 
   return (
     <div className="page">
-      <h1>Aarpo Tracks</h1>
+      <div className="detail-header">
+        <button className="back-btn" onClick={onBack}>← Back</button>
+        <h1>{setListName}</h1>
+      </div>
 
       <div className="upload-bar">
         <input
